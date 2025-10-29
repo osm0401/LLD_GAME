@@ -1,90 +1,66 @@
-# main.py
-# -----------------------------------------
-# 전체 게임 실행 진입점
-# - click_ring 모듈 제거 → Player가 자체 이펙트 관리
-# -----------------------------------------
-import os, pygame
-from config import WIDTH, HEIGHT, TITLE, BG_COLOR, BUTTON_SIZE, BUTTON_MARGIN, PANEL_SIZE
-from game.player import Player
-from ui.settings_panel import SettingsPanel
-import sys, os
-sys.path.append(os.path.dirname(__file__))
-def resource_path(*parts):
-    base = os.path.dirname(__file__)
-    return os.path.join(base, *parts)
+import pygame
+from pygame.math import Vector2 as V2
+from settings import *
+from map_system import *
+from npc import NPC, DialogManager
 
 def main():
     pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption(TITLE)
+    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    pygame.display.set_caption("LoL-style Camera + NPC")
     clock = pygame.time.Clock()
 
-    # 설정 아이콘
-    settings_img = pygame.image.load(resource_path("assets", "settings.png")).convert_alpha()
-    settings_img = pygame.transform.scale(settings_img, (BUTTON_SIZE, BUTTON_SIZE))
-    button_rect = settings_img.get_rect()
-    button_rect.topright = (WIDTH - BUTTON_MARGIN, BUTTON_MARGIN)
+    load_overrides()
 
-    # 마우스 창 고정 초기값
-    mouse_grab = True
-    pygame.event.set_grab(mouse_grab)
+    player_world = V2(WORLD_W/2, WORLD_H/2)
+    move_target, player_facing = None, V2(1,0)
+    font = pygame.font.SysFont(FONT_NAME, 18)
+    big_font = pygame.font.SysFont(FONT_NAME, 22)
+    editor_mode, editing_cell, input_text = False, None, ""
 
-    # 설정 패널: mouse_grab 토글 콜백
-    def on_toggle_mouse_grab(state: bool):
-        nonlocal mouse_grab
-        mouse_grab = state
-        pygame.event.set_grab(mouse_grab)
-
-    settings = SettingsPanel((WIDTH, HEIGHT), PANEL_SIZE, on_toggle_mouse_grab)
-
-    # 플레이어 (이제 내부에서 클릭 링 이펙트도 함께 관리)
-    player = Player(start_pos=(WIDTH // 2 - 18, HEIGHT // 2 - 18))
-
+    npcs = [
+        NPC("연맹 파수꾼", V2(WORLD_W/2+100, WORLD_H/2),
+            ["안녕, 여행자!", "북동쪽으로 가면 비석이 있어."]),
+        NPC("상인 로웰", V2(WORLD_W/2-220, WORLD_H/2+180),
+            ["필요한 게 있으면 언제든 찾아오게."])
+    ]
+    dialog = DialogManager()
     running = True
+
     while running:
-        dt = clock.tick(0) / 1000.0  # FPS 제한 없음
+        dt = clock.tick(FPS)/1000
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT: running=False
+            elif e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_ESCAPE:
+                    if dialog.active: dialog.close()
+                    else: running=False
+                elif e.key == pygame.K_SPACE and not editor_mode:
+                    if dialog.active: dialog.progress()
+                    else:
+                        front = [n for n in npcs if n.is_in_front_of_player(player_world, player_facing)]
+                        if front: dialog.open(front[0])
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+        # 이동
+        if move_target and not dialog.active:
+            diff = move_target - player_world
+            if diff.length()<2: move_target=None
+            else:
+                dirv = diff.normalize()
+                player_facing = dirv
+                player_world += dirv*PLAYER_SPEED*dt
+                player_world = clamp_to_world(player_world)
 
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                if settings.open:
-                    settings.open = False
-                else:
-                    running = False
-
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                # 설정 버튼
-                if event.button == 1 and button_rect.collidepoint(event.pos):
-                    settings.open = not settings.open
-
-                # 설정 열려있으면 UI에 이벤트 전달
-                if settings.open:
-                    settings.handle_event(event)
-
-                # 우클릭 이동 + (플레이어 내부) 링 이펙트 생성
-                elif event.button == 3:
-                    mx, my = event.pos
-                    player.set_target((mx, my))
-                    player.spawn_click_ring(mx, my)
-
-        if settings.open:
-            settings.update(dt)
-
-        player.update(dt)
-
-        # 렌더링
-        screen.fill(BG_COLOR)
-        player.draw(screen)
-        player.update_and_draw_click_rings(screen)  # ← 이 줄로 이펙트 그리기
-
-        # 설정 버튼/패널
-        screen.blit(settings_img, button_rect)
-        settings.draw(screen)
-
+        camera_offset = CENTER - player_world
+        draw_background(screen, camera_offset)
+        for n in npcs: n.draw(screen, camera_offset, font)
+        pygame.draw.circle(screen, (220,220,235), CENTER, PLAYER_RADIUS)
+        pygame.draw.circle(screen, (90,100,120), CENTER, PLAYER_RADIUS, 2)
+        if player_facing.length_squared()>1e-6:
+            tip = CENTER + player_facing.normalize()*(PLAYER_RADIUS+10)
+            pygame.draw.circle(screen, (255,210,80), tip, 3)
+        dialog.draw(screen, big_font, font)
         pygame.display.flip()
-
     pygame.quit()
 
 if __name__ == "__main__":
