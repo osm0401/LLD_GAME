@@ -62,6 +62,4 @@ def main():
         dialog.draw(screen, big_font, font)
         pygame.display.flip()
     pygame.quit()
-
-if __name__ == "__main__":
-    main()
+main()
