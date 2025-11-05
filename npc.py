@@ -25,9 +25,9 @@ SAMPLE_NODES = {
         "나도 안녕! 하늘섬에 온 걸 환영해.",
         choices=[("여기는 어디야?", "where"), ("넌 누구야", "who")]),
     "where": DialogueNode("where",
-        "여기는 엘테리아 야"
-            "자네 혹시 ")
-    "bye": DialogueNode("bye", "바람이 너의 길을 비출 거야.", choices=[]),
+        "여기는 엘테리아 야",
+        choices=[("그게 뭐죠?",""),("알려주세요","")]),
+    "bye": DialogueNode("bye", "바람이 너의 길을 비출 거야.", choices=[])
 }
 
 class NPC:
