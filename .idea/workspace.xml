@@ -5,17 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7b3097b2-f5d8-400c-af8d-939c96f6659c" name="변경" comment="변경">
-      <change afterPath="$PROJECT_DIR$/assets/1.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/assets/sprites/bank_npc.png" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/buck_bank.py" beforeDir="false" afterPath="$PROJECT_DIR$/buck_bank.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/buck_city.py" beforeDir="false" afterPath="$PROJECT_DIR$/buck_city.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/map_system.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/npc.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/player.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/settings.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/story.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tem.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/test codes.py" beforeDir="false" afterPath="$PROJECT_DIR$/test codes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/npc.py" beforeDir="false" afterPath="$PROJECT_DIR$/npc.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -80,7 +75,7 @@
     "git-widget-placeholder": "master",
     "ignore.virus.scanning.warn.message": "true",
     "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "C:/Users/cmo00/PycharmProjects/LLD_GAME/assets",
+    "last_opened_file_path": "C:/Users/cmo00/PycharmProjects/LLD_GAME/assets/sprites",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -93,8 +88,8 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
-      <recent name="C:\Users\cmo00\PycharmProjects\LLD_GAME\assets" />
       <recent name="C:\Users\cmo00\PycharmProjects\LLD_GAME\assets\sprites" />
+      <recent name="C:\Users\cmo00\PycharmProjects\LLD_GAME\assets" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\cmo00\PycharmProjects\LLD_GAME\codes" />
