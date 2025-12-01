@@ -1,18 +1,21 @@
 # utils.py
-def draw_multiline(surf, text, font, color, pos, max_width=800, line_spacing=6):
-    words = list(text)
-    lines, cur = [], ""
-    for ch in words:
-        cand = cur + ch
-        if font.size(cand)[0] <= max_width:
-            cur = cand
-        else:
-            lines.append(cur)
-            cur = ch
-    if cur:
-        lines.append(cur)
-    x, y = pos
-    for ln in lines:
-        img = font.render(ln, True, color)
-        surf.blit(img, (x, y))
-        y += img.get_height() + line_spacing
+import pygame
+
+def draw_multiline(surf, text, font, color, topleft, max_width):
+    if not text:
+        return
+    x, y = topleft
+    space_w = font.size(" ")[0]
+    for para in str(text).split("\n"):
+        words = para.split(" ")
+        line = ""
+        for w in words:
+            test = (line + " " + w) if line else w
+            if font.size(test)[0] <= max_width:
+                line = test
+            else:
+                surf.blit(font.render(line, True, color), (x, y))
+                y += font.get_linesize()
+                line = w
+        surf.blit(font.render(line, True, color), (x, y))
+        y += font.get_linesize()
