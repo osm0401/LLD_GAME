@@ -1,6 +1,11 @@
 # settings.py
 from pygame.math import Vector2 as V2
 
+BG_CLEAR_COLOR = (17, 19, 24)
+BLOCK_SIZE= 32
+
+# ← 이 줄이 없어서 에러가 났음
+TILE_FOLDER    = "assets/tiles"   # 기본 타일 폴더
 # -------- 화면/성능 --------
 SCREEN_W, SCREEN_H = 960, 540
 CENTER = V2(SCREEN_W // 2, SCREEN_H // 2)

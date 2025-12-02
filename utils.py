@@ -1,5 +1,13 @@
 # utils.py
 import pygame
+import math
+
+def circle_rect_intersect(cx, cy, cr, rx, ry, rw, rh):
+    """원(플레이어)과 직사각형(벽 블록) 충돌 여부."""
+    nx = max(rx, min(cx, rx + rw))
+    ny = max(ry, min(cy, ry + rh))
+    dx, dy = cx - nx, cy - ny
+    return (dx*dx + dy*dy) <= (cr*cr)
 
 def draw_multiline(surf, text, font, color, topleft, max_width):
     if not text:
