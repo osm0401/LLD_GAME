@@ -1,111 +1,116 @@
-# player.py
+# player.py — 사이드뷰 플레이어
+
+import os
 import pygame
 from pygame.math import Vector2 as V2
-from settings import *
+from settings import PLAYER_SIZE, PLAYER_MAX_SPEED, PLAYER_ACCEL, PLAYER_FRICTION
 
 class Player:
-    """
-    3행 × 3열 구조 스프라이트 시트 (앞/옆/뒤 3컷씩)
-    자동으로 좌/우 반전, 부족한 프레임은 채워서 4프레임 애니메이션 생성
-    """
-    def __init__(self, world_pos: V2,
-                 spritesheet_path="assets/sprites/player_sheet.png"):
-        self.world_pos = V2(world_pos)
-        self.direction = "down"
-        self.anim_timer = 0.0
-        self.anim_speed = 0.12
-        self.anim_frame = 0
-        self.moving = False
+    def __init__(self, start_pos):
+        self.pos = V2(start_pos)           # 월드 좌표(왼쪽 위)
+        self.vel = V2(0, 0)
+        self.w, self.h = PLAYER_SIZE
+        self.facing = -1                  # 1:오른쪽, -1:왼쪽
+        # 스프라이트 시도(없으면 색 박스)
+        self.sprite = None
+        self._try_load_sprite()
 
-        # 4방향 프레임 저장
-        self.frames = {"down": [], "left": [], "right": [], "up": []}
 
-        self._load_sheet(spritesheet_path)
+    def _try_load_sprite(self):
+        # 사용자가 제공하면 씀: assets/sprites/player_side.png (투명 배경 권장)
+        path = os.path.join("assets", "sprites", "player_side.png")
+        if os.path.exists(path):
+            try:
+                img = pygame.image.load(path).convert_alpha()
+                self.sprite = pygame.transform.smoothscale(img, (self.w, self.h))
+            except Exception:
+                self.sprite = None
 
-        # 🔽 화면에 표시할 크기 (작게!)
-        self.draw_size = (32, 42)  # 추천 크기, 필요하면 조절 가능
+    @property
+    def rect(self):
+        return pygame.Rect(int(self.pos.x), int(self.pos.y), self.w, self.h)
 
-    def _load_sheet(self, path: str):
-        try:
-            sheet = pygame.image.load(path).convert_alpha()
-            # 혹시 흰색 잔여 있으면 이 줄 활성화
-            # sheet.set_colorkey((255, 255, 255))
-        except Exception as e:
-            print("[Player] spritesheet load failed:", e)
-            tmp = pygame.Surface((48, 48), pygame.SRCALPHA)
-            tmp.fill((255, 0, 255, 180))
-            for k in self.frames:
-                self.frames[k] = [tmp.copy()]
-            return
+    def update(self, dt, keys, level):
+        # ----------------------------
+        # 1. 입력 처리 (좌우 이동)
+        # ----------------------------
+        move = 0
+        if keys[pygame.K_a]:
+            move -= 1
+        if keys[pygame.K_d]:
+            move += 1
 
-        # 시트 크기 분석
-        sheet_w, sheet_h = sheet.get_size()
-        cols, rows = 3, 3
-        frame_w, frame_h = sheet_w // cols, sheet_h // rows
-
-        # 아래 순서로 자르기
-        down, right, up = [], [], []
-
-        # 1행: down
-        for c in range(cols):
-            surf = pygame.Surface((frame_w, frame_h), pygame.SRCALPHA)
-            surf.blit(sheet, (0, 0), pygame.Rect(c * frame_w, 0, frame_w, frame_h))
-            down.append(surf)
-
-        # 2행: right
-        for c in range(cols):
-            surf = pygame.Surface((frame_w, frame_h), pygame.SRCALPHA)
-            surf.blit(sheet, (0, 0), pygame.Rect(c * frame_w, frame_h, frame_w, frame_h))
-            right.append(surf)
-
-        # 3행: up
-        for c in range(cols):
-            surf = pygame.Surface((frame_w, frame_h), pygame.SRCALPHA)
-            surf.blit(sheet, (0, 0), pygame.Rect(c * frame_w, frame_h * 2, frame_w, frame_h))
-            up.append(surf)
-
-        # 방향별 프레임 구성
-        self.frames["down"] = self._pad_to_4(down)
-        self.frames["left"] = self._pad_to_4(right)  # ← 오른쪽 프레임을 그대로 왼쪽으로
-        self.frames["right"] = self._pad_to_4([pygame.transform.flip(f, True, False) for f in right])  # ← 반대로 뒤집기
-        self.frames["up"] = self._pad_to_4(up)
-
-    def _pad_to_4(self, frames):
-        """3프레임밖에 없으면 4프레임으로 채워서 리턴"""
-        if len(frames) >= 4:
-            return frames[:4]
-        if len(frames) == 3:
-            return [frames[0], frames[1], frames[2], frames[1]]
-        if len(frames) == 2:
-            return [frames[0], frames[1], frames[0], frames[1]]
-        if len(frames) == 1:
-            return [frames[0]] * 4
-        empty = pygame.Surface((48, 48), pygame.SRCALPHA)
-        return [empty] * 4
-
-    def set_direction_from_vec(self, vec: V2):
-        if abs(vec.x) > abs(vec.y):
-            self.direction = "right" if vec.x > 0 else "left"
+        # 가속
+        if move != 0:
+            self.vel.x += move * PLAYER_ACCEL * dt
+            self.facing = 1 if move > 0 else -1
         else:
-            self.direction = "down" if vec.y > 0 else "up"
+            # 마찰로 감속
+            if self.vel.x > 0:
+                self.vel.x = max(0, self.vel.x - PLAYER_FRICTION * dt)
+            elif self.vel.x < 0:
+                self.vel.x = min(0, self.vel.x + PLAYER_FRICTION * dt)
 
-    def update_anim(self, dt: float):
-        if not self.moving:
-            self.anim_frame = 0
-            return
-        self.anim_timer += dt
-        if self.anim_timer >= self.anim_speed:
-            self.anim_timer = 0
-            self.anim_frame = (self.anim_frame + 1) % 4
+        # 속도 제한
+        if self.vel.x > PLAYER_MAX_SPEED:
+            self.vel.x = PLAYER_MAX_SPEED
+        if self.vel.x < -PLAYER_MAX_SPEED:
+            self.vel.x = -PLAYER_MAX_SPEED
 
-    def draw(self, surf: pygame.Surface, camera_offset: V2):
-        frames = self.frames[self.direction]
-        frame = frames[self.anim_frame]
+        # ----------------------------
+        # 2. X 방향 이동 + 벽/지형지물 충돌
+        # ----------------------------
+        new_x = self.pos.x + self.vel.x * dt
 
-        # 🔽 스케일 적용 (너무 클 때 줄이기)
-        if self.draw_size is not None:
-            frame = pygame.transform.smoothscale(frame, self.draw_size)
+        # 우선 월드 범위로 클램프
+        new_x = max(0, min(level.world_w - self.w, new_x))
 
-        # 🔽 캐릭터를 중앙보다 살짝 아래로 위치시킴 (+10)
-        rect = frame.get_rect(center=(CENTER.x, CENTER.y + 10))
-        surf.blit(frame, rect)
+        # 임시 rect (이 위치로 갔을 때의 플레이어 사각형)
+        test_rect = pygame.Rect(int(new_x), int(self.pos.y), self.w, self.h)
+
+        # 레벨이 solid rect 정보를 제공하면 충돌 체크
+        solid_rects = []
+        if hasattr(level, "get_solid_rects"):
+            solid_rects = level.get_solid_rects()
+
+        for srect in solid_rects:
+            if test_rect.colliderect(srect):
+                # 오른쪽으로 이동 중 → 오른쪽 벽에 부딪힘
+                if self.vel.x > 0:
+                    new_x = srect.left - self.w
+                # 왼쪽으로 이동 중 → 왼쪽 벽에 부딪힘
+                elif self.vel.x < 0:
+                    new_x = srect.right
+
+                # 위치를 수정한 값으로 rect도 업데이트
+                test_rect.x = int(new_x)
+
+        # 실제 x 좌표 반영
+        self.pos.x = new_x
+
+        # ----------------------------
+        # 3. Y 방향(바닥 위로 붙이기)
+        # ----------------------------
+        if hasattr(level, "surface_y"):
+            # 레벨이 surface_y를 제공할 때
+            self.pos.y = level.surface_y(self.rect)
+        else:
+            # 혹시 구버전 level.py와도 호환되게
+            base_y = level.surface_y_rect_x(self.rect.centerx)
+            self.pos.y = base_y - self.h
+
+    def draw(self, surf, camera_x):
+        screen_x = int(self.pos.x - camera_x)
+        screen_y = int(self.pos.y)
+
+        if self.sprite:
+            img = self.sprite
+            if self.facing < 0:
+                img = pygame.transform.flip(img, True, False)
+            surf.blit(img, (screen_x, screen_y))
+        else:
+            # 임시: 파란색 캐릭터 박스 + 얼굴 방향선
+            body = pygame.Rect(screen_x, screen_y, self.w, self.h)
+            pygame.draw.rect(surf, (120, 160, 255), body, border_radius=6)
+            eye_x = body.centerx + (self.facing * (self.w//4))
+            pygame.draw.line(surf, (30, 40, 60), (eye_x, body.centery-6), (eye_x, body.centery+6), 2)

@@ -1,33 +1,26 @@
-# settings.py
-from pygame.math import Vector2 as V2
+# settings.py — 사이드뷰 공용 설정
 
-BG_CLEAR_COLOR = (17, 19, 24)
-BLOCK_SIZE= 32
-
-# ← 이 줄이 없어서 에러가 났음
-TILE_FOLDER    = "assets/tiles"   # 기본 타일 폴더
-# -------- 화면/성능 --------
 SCREEN_W, SCREEN_H = 960, 540
-CENTER = V2(SCREEN_W // 2, SCREEN_H // 2)
 FPS = 60
 
-# -------- 플레이어 --------
-PLAYER_SPEED = 240.0
-PLAYER_RADIUS = 14
-FONT_NAME = "malgungothic"     # 대체 폰트 자동 적용됨
+# 월드 크기(가로로 긴 사이드뷰)
+WORLD_W = 4800
+WORLD_H = SCREEN_H
 
-# -------- 타일/맵 --------
-TILE_SIZE = 256
-MAP_ROWS = 12
-MAP_COLS = 12
-WORLD_W, WORLD_H = MAP_COLS * TILE_SIZE, MAP_ROWS * TILE_SIZE
+# 플레이어/물리
+PLAYER_SIZE = (36, 52)
+PLAYER_MAX_SPEED = 320.0      # 좌우 최고 속도(px/s)
+PLAYER_ACCEL = 2000.0         # 가속도
+PLAYER_FRICTION = 1800.0      # 가속 입력이 없을 때 감속
 
-# -------- NPC/상호작용 --------
-NPC_RADIUS = 14
-INTERACT_DISTANCE = 90.0
+# 지면
+GROUND_Y = SCREEN_H - 120     # 기본 지면 높이(px)
 
-# -------- 에디터 UI (작게) --------
-EDITOR_INPUT_HEIGHT = 28
-EDITOR_INPUT_PADDING = 8
-EDITOR_SELECT_INSET = 6
-EDITOR_SELECT_BORDER = 2
+# 색상 팔레트(따뜻한 핑크 하늘 느낌)
+SKY_TOP = (255, 190, 210)
+SKY_BOTTOM = (255, 220, 230)
+CLOUD = (255, 245, 250)
+GROUND_DARK = (90, 76, 88)
+GROUND_LIGHT = (120, 102, 118)
+
+FONT_NAME = "malgungothic"    # 윈도우라면 말굿고딕, 없으면 자동 대체

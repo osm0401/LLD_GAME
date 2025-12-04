@@ -39,7 +39,7 @@ TILE_FOLDER = "assets/tiles"
 WORLD_W, WORLD_H = MAP_COLS * TILE_SIZE, MAP_ROWS * TILE_SIZE
 
 # 오버라이드 저장 파일
-MAP_SAVE_PATH = "map_overrides_city.json"
+MAP_SAVE_PATH = "map_city.json"
 
 # ===== NPC / 상호작용 설정 =====
 INTERACT_DISTANCE = 70           # 대화 가능 최대 거리(픽셀, 월드 좌표)
