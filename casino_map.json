@@ -1,0 +1,15 @@
+{
+  "_meta": {
+    "id": "casino",
+    "world_w": 4800,
+    "world_h": 540,
+    "sky_top": [255, 210, 225],
+    "sky_bottom": [255, 230, 240]
+  },
+  "ground_segments": [[0, 420], [4800, 420]],
+  "walls": [],
+  "props": [],
+  "photos": [],
+  "wall_grid": { "cols": 5, "rows": 3, "cell": 80, "origin": [1200, 180] },
+  "wall_cells": []
+}

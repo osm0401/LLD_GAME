@@ -1,375 +1,316 @@
-# level.py — 배경/지면/파라ラック스 + JSON 기반 맵 데이터(바닥/벽/지형지물)
-
-import os
-import json
-import math
+# level.py
+from __future__ import annotations
+import os, json
 import pygame
 from pygame.math import Vector2 as V2
-from settings import (
-    SCREEN_W, SCREEN_H, WORLD_W, WORLD_H,
-    SKY_TOP, SKY_BOTTOM, CLOUD,
-    GROUND_DARK, GROUND_LIGHT, GROUND_Y,
-)
+import settings as S
+
+SCREEN_W = S.SCREEN_W
+SCREEN_H = S.SCREEN_H
+WORLD_W  = S.WORLD_W
+WORLD_H  = S.WORLD_H
+
+GROUND_LIGHT = S.GROUND_LIGHT
+GROUND_DARK  = S.GROUND_DARK
 
 
 class Level:
-    """
-    한 개의 맵(씬)을 담당하는 클래스.
-    - map_id별로 map_<map_id>.json 에서 지형 데이터를 로드/세이브
-    - ground_segments : 바닥(플랫폼) 곡선
-    - walls           : 벽(충돌용/장식용)
-    - props           : 지형지물(소품, 오브젝트)
-    """
+    def __init__(self, map_file: str):
+        self.map_file = map_file
 
-    def __init__(self, map_id: str = "city"):
-        self.map_id = map_id
-
-        # 월드 크기 (JSON에서 덮어쓸 수 있음)
         self.world_w = WORLD_W
         self.world_h = WORLD_H
 
-        # 지형 데이터
+        # ✅ 맵별 하늘색(기본은 settings)
+        self.sky_top = S.SKY_TOP
+        self.sky_bottom = S.SKY_BOTTOM
+
         self.ground_segments: list[tuple[int, int]] = []
-        self.walls: list[dict] = []  # {"x":..,"y":..,"w":..,"h":..}
-        self.props: list[dict] = []  # {"x":..,"y":..,"w":..,"h":..}
+        self.walls: list[pygame.Rect] = []
+        self.props: list[dict] = []
+        self.photos: list[dict] = []
+        self._photo_cache: dict[tuple[str, int, int], pygame.Surface | None] = {}
 
-        # 파라allax 구름(타원)
-        self.clouds_far = [
-            (300, 120, 260, 90),
-            (1100, 100, 300, 100),
-            (2000, 130, 280, 95),
-            (3100, 110, 320, 110),
-        ]
-        self.clouds_mid = [
-            (600, 180, 220, 80),
-            (1700, 210, 240, 90),
-            (2600, 170, 220, 80),
-            (3800, 190, 260, 86),
-        ]
-
-        # JSON에서 로드 시도, 실패하면 기본 지형 사용
-        self._load_from_json_or_default()
-
-    # ------------------------------------------------------------------
-    # JSON 로드/세이브
-    # ------------------------------------------------------------------
-    def _map_filename(self) -> str:
-        """이 맵의 JSON 파일 이름 (예: map_city.json)."""
-        return f"map_{self.map_id}.json"
-
-    def _default_ground_segments(self) -> list[tuple[int, int]]:
-        """기존에 하드코딩으로 쓰던 기본 바닥 형태."""
-        return [
-            (0, GROUND_Y),
-            (800, GROUND_Y - 8),
-            (1600, GROUND_Y - 22),
-            (2400, GROUND_Y - 10),
-            (3200, GROUND_Y - 18),
-            (4000, GROUND_Y - 6),
-            (WORLD_W, GROUND_Y - 12),
-        ]
-
-    def get_solid_rects(self) -> list[pygame.Rect]:
-        """
-        벽(walls) + 지형지물(props)을 모두 pygame.Rect 리스트로 만들어 돌려준다.
-        (충돌판정에 사용)
-        """
-        rects: list[pygame.Rect] = []
-
-        for w in self.walls:
-            try:
-                rx = int(w.get("x", 0))
-                ry = int(w.get("y", 0))
-                rw = int(w.get("w", 40))
-                rh = int(w.get("h", 80))
-                rects.append(pygame.Rect(rx, ry, rw, rh))
-            except Exception:
-                pass
-
-        for p in self.props:
-            try:
-                rx = int(p.get("x", 0))
-                ry = int(p.get("y", 0))
-                rw = int(p.get("w", 30))
-                rh = int(p.get("h", 30))
-                rects.append(pygame.Rect(rx, ry, rw, rh))
-            except Exception:
-                pass
-
-        return rects
-    def _set_default_geometry(self):
-        """JSON이 없거나 오류일 때 사용할 기본 지형."""
-        self.ground_segments = self._default_ground_segments()
-        self.walls = []
-        self.props = []
-
-    def _load_from_json_or_default(self):
-        """map_<id>.json에서 맵을 로드. 실패 시 기본값."""
-        path = self._map_filename()
-        if not os.path.exists(path):
-            print(f"[Level] {path} 없음 → 기본 지형 사용")
-            self._set_default_geometry()
-            return
-
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            self.world_w = int(data.get("world_w", WORLD_W))
-            self.world_h = int(data.get("world_h", WORLD_H))
-
-            gs = data.get("ground_segments")
-            if isinstance(gs, list) and gs:
-                self.ground_segments = [(int(x), int(y)) for x, y in gs]
-            else:
-                self.ground_segments = self._default_ground_segments()
-
-            self.walls = list(data.get("walls", []))
-            self.props = list(data.get("props", []))
-
-            print(f"[Level] {path} 로드 완료 (segments={len(self.ground_segments)}, "
-                  f"walls={len(self.walls)}, props={len(self.props)})")
-        except Exception as e:
-            print("[Level] map load error:", e)
-            self._set_default_geometry()
-
-    def save_to_json(self):
-        """현재 지형/벽/지형지물을 map_<id>.json에 저장."""
-        data = {
-            "id": self.map_id,
-            "world_w": int(self.world_w),
-            "world_h": int(self.world_h),
-            "ground_segments": [[int(x), int(y)] for (x, y) in self.ground_segments],
-            "walls": self.walls,
-            "props": self.props,
+        self.wall_grid = {
+            "cols": 5,
+            "rows": 3,
+            "cell": 80,
+            "origin": V2(1200, 180),
         }
-        path = self._map_filename()
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            print(f"[Level] 맵 저장 완료 → {path}")
-        except Exception as e:
-            print("[Level] map save error:", e)
+        self.wall_cells: set[tuple[int, int]] = set()
 
-    # ------------------------------------------------------------------
-    # 인게임 에디터용 헬퍼 (벽/지형지물/바닥 수정)
-    # ------------------------------------------------------------------
-    def add_wall(self, x: float, y: float, w: int = 40, h: int = 80):
-        """현재 맵에 새 벽 추가."""
-        self.walls.append({
-            "x": int(x),
-            "y": int(y),
-            "w": int(w),
-            "h": int(h),
-        })
+        self.load_map(self.map_file)
 
-    def add_prop(self, x: float, y: float, w: int = 32, h: int = 32):
-        """현재 맵에 새 지형지물(소품) 추가."""
-        self.props.append({
-            "x": int(x),
-            "y": int(y),
-            "w": int(w),
-            "h": int(h),
-        })
+    # ----------------------------
+    # JSON I/O
+    # ----------------------------
+    def load_map(self, map_file: str | None = None) -> None:
+        if map_file:
+            self.map_file = map_file
 
-    @staticmethod
-    def _find_index_near(items: list[dict], x: float, y: float, radius: float = 40) -> int | None:
-        """리스트에서 (x,y)에 가장 가까운 요소의 인덱스를 찾는다."""
-        if not items:
-            return None
-        best_i = None
-        best_d2 = radius * radius
-        for i, it in enumerate(items):
-            ix = it.get("x", 0) + it.get("w", 0) / 2
-            iy = it.get("y", 0) + it.get("h", 0) / 2
-            dx = ix - x
-            dy = iy - y
-            d2 = dx * dx + dy * dy
-            if d2 <= best_d2:
-                best_d2 = d2
-                best_i = i
-        return best_i
+        self.ground_segments.clear()
+        self.walls.clear()
+        self.props.clear()
+        self.photos.clear()
+        self.wall_cells.clear()
+        self._photo_cache.clear()
 
-    def remove_wall_at(self, x: float, y: float, radius: float = 40):
-        """(x,y) 주변의 벽 하나 삭제."""
-        idx = self._find_index_near(self.walls, x, y, radius)
-        if idx is not None:
-            self.walls.pop(idx)
+        if not os.path.exists(self.map_file):
+            raise FileNotFoundError(f"[Level] 맵 파일 없음: {self.map_file}")
 
-    def remove_prop_at(self, x: float, y: float, radius: float = 40):
-        """(x,y) 주변의 지형지물 하나 삭제."""
-        idx = self._find_index_near(self.props, x, y, radius)
-        if idx is not None:
-            self.props.pop(idx)
+        with open(self.map_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-    def adjust_ground_at(self, x: float, new_y: float):
-        """
-        x 좌표와 가장 가까운 ground_segments의 지점을 찾아
-        그 y를 new_y로 조정 (바닥 높이 수정).
-        """
+        meta = data.get("_meta", {})
+
+        self.world_w = int(meta.get("world_w", self.world_w))
+        self.world_h = int(meta.get("world_h", self.world_h))
+
+        # ✅ 맵별 하늘색 오버라이드
+        st = meta.get("sky_top")
+        sb = meta.get("sky_bottom")
+        if isinstance(st, (list, tuple)) and len(st) == 3:
+            self.sky_top = (int(st[0]), int(st[1]), int(st[2]))
+        if isinstance(sb, (list, tuple)) and len(sb) == 3:
+            self.sky_bottom = (int(sb[0]), int(sb[1]), int(sb[2]))
+
+        for p in data.get("ground_segments", []):
+            if isinstance(p, (list, tuple)) and len(p) == 2:
+                self.ground_segments.append((int(p[0]), int(p[1])))
+
         if not self.ground_segments:
-            return
-        idx = min(range(len(self.ground_segments)), key=lambda i: abs(self.ground_segments[i][0] - x))
-        gx, gy = self.ground_segments[idx]
-        self.ground_segments[idx] = (gx, int(new_y))
+            raise ValueError("[Level] ground_segments 비어있음")
 
-    # ------------------------------------------------------------------
-    # 내부 그리기 유틸
-    # ------------------------------------------------------------------
-    def _draw_sky(self, surf: pygame.Surface):
-        """화면 전체 그라디언트 배경."""
-        for y in range(SCREEN_H):
-            t = y / (SCREEN_H - 1)
-            r = int(SKY_TOP[0] * (1 - t) + SKY_BOTTOM[0] * t)
-            g = int(SKY_TOP[1] * (1 - t) + SKY_BOTTOM[1] * t)
-            b = int(SKY_TOP[2] * (1 - t) + SKY_BOTTOM[2] * t)
-            pygame.draw.line(surf, (r, g, b), (0, y), (SCREEN_W, y))
+        for w in data.get("walls", []):
+            r = pygame.Rect(int(w["x"]), int(w["y"]), int(w["w"]), int(w["h"]))
+            self.walls.append(r)
 
-    def _draw_parallax_clouds(self, surf: pygame.Surface, camera_x: float):
-        """카메라에 따라 움직이는 파라allax 구름."""
-        # 먼 구름(느리게)
-        for x, y, w, h in self.clouds_far:
-            rx = int(x - camera_x * 0.2)
-            ry = y
-            pygame.draw.ellipse(surf, CLOUD, (rx, ry, w, h))
-        # 중간 구름
-        for x, y, w, h in self.clouds_mid:
-            rx = int(x - camera_x * 0.4)
-            ry = y
-            pygame.draw.ellipse(surf, CLOUD, (rx, ry, w, h))
+        for p in data.get("props", []):
+            r = pygame.Rect(int(p["x"]), int(p["y"]), int(p["w"]), int(p["h"]))
+            self.props.append({
+                "rect": r,
+                "solid": bool(p.get("solid", True)),
+                "name": p.get("name", ""),
+            })
 
-    def _draw_ground(self, surf: pygame.Surface, camera_x: float):
-        """바닥 + 잔디 디테일 + 벽 + 지형지물 렌더링."""
-        # 바닥(ground_segments)을 폴리곤으로 채우기
-        pts = []
-        for x, gy in self.ground_segments:
-            pts.append((int(x - camera_x), int(gy)))
+        for ph in data.get("photos", []):
+            self.photos.append({
+                "x": int(ph.get("x", 0)),
+                "y": int(ph.get("y", 0)),
+                "w": int(ph.get("w", 96)),
+                "h": int(ph.get("h", 96)),
+                "path": str(ph.get("path", "")),
+            })
 
-        if len(pts) >= 2:
-            # 아래 화면 끝까지 닫아서 채우기
-            pts_poly = [(pts[0][0], SCREEN_H)] + pts + [(pts[-1][0], SCREEN_H)]
-            pygame.draw.polygon(surf, GROUND_LIGHT, pts_poly)
-            pygame.draw.lines(surf, GROUND_DARK, False, pts, 3)
+        self._apply_wall_grid_from_json(data)
+        if self.wall_cells:
+            self.rebuild_walls_from_grid()
 
-            # 난간/잔디 느낌의 디테일
-            for x in range(-100, SCREEN_W + 100, 12):
-                base = self.surface_y_rect_x(int(x + camera_x))
-                pygame.draw.rect(surf, GROUND_DARK, (x, base - 4, 8, 4))
+        print(f"[Level] {self.map_file} 로드 완료")
 
-        # 벽(직사각형)
-        for w in self.walls:
-            try:
-                rx = int(w.get("x", 0) - camera_x)
-                ry = int(w.get("y", 0))
-                rw = int(w.get("w", 40))
-                rh = int(w.get("h", 80))
-                rect = pygame.Rect(rx, ry, rw, rh)
-                pygame.draw.rect(surf, (90, 90, 110), rect)
-                pygame.draw.rect(surf, (30, 30, 45), rect, 2)
-            except Exception:
-                pass
+    def save_map(self, map_file: str | None = None) -> None:
+        if map_file:
+            self.map_file = map_file
 
-        # 지형지물(소품)
-        for p in self.props:
-            try:
-                rx = int(p.get("x", 0) - camera_x)
-                ry = int(p.get("y", 0))
-                rw = int(p.get("w", 30))
-                rh = int(p.get("h", 30))
-                rect = pygame.Rect(rx, ry, rw, rh)
-                pygame.draw.rect(surf, (130, 110, 70), rect)
-                pygame.draw.rect(surf, (80, 60, 40), rect, 2)
-            except Exception:
-                pass
+        data = {
+            "_meta": {
+                "id": os.path.splitext(os.path.basename(self.map_file))[0],
+                "world_w": self.world_w,
+                "world_h": self.world_h,
+                # ✅ 현재 하늘색도 저장
+                "sky_top": list(self.sky_top),
+                "sky_bottom": list(self.sky_bottom),
+            },
+            "ground_segments": [[x, y] for (x, y) in self.ground_segments],
+            "walls": [{"x": r.x, "y": r.y, "w": r.w, "h": r.h} for r in self.walls],
+            "props": [
+                {
+                    "x": d["rect"].x, "y": d["rect"].y,
+                    "w": d["rect"].w, "h": d["rect"].h,
+                    "solid": bool(d.get("solid", True)),
+                    "name": d.get("name", ""),
+                }
+                for d in self.props
+            ],
+            "photos": list(self.photos),
+            "wall_grid": {
+                "cols": self.wall_grid["cols"],
+                "rows": self.wall_grid["rows"],
+                "cell": self.wall_grid["cell"],
+                "origin": [int(self.wall_grid["origin"].x), int(self.wall_grid["origin"].y)],
+            },
+            "wall_cells": [[c, r] for (c, r) in sorted(self.wall_cells)],
+        }
 
-    # ------------------------------------------------------------------
-    # public API
-    # ------------------------------------------------------------------
-    def draw(self, surf: pygame.Surface, camera_x: float):
-        """현재 맵 전체를 그린다."""
-        self._draw_sky(surf)
-        self._draw_parallax_clouds(surf, camera_x)
-        self._draw_ground(surf, camera_x)
+        with open(self.map_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # 주어진 월드 x에서의 지면 y 샘플
+        print(f"[Level] map saved -> {self.map_file}")
+
+    # ----------------------------
+    # 지면/서포트
+    # ----------------------------
     def surface_y_rect_x(self, world_x: int) -> int:
-        """ground_segments 사이를 보간해서 해당 x의 지면 y를 구한다."""
         segs = self.ground_segments
-        if not segs:
-            return GROUND_Y
+        if world_x <= segs[0][0]:
+            return segs[0][1]
+        if world_x >= segs[-1][0]:
+            return segs[-1][1]
+
         for i in range(len(segs) - 1):
             x0, y0 = segs[i]
             x1, y1 = segs[i + 1]
             if x0 <= world_x <= x1:
-                t = (world_x - x0) / max(1, (x1 - x0))   # ← 여기까지 이미 고쳐둔 부분
+                denom = max(1, x1 - x0)
+                t = (world_x - x0) / denom
                 return int(y0 * (1 - t) + y1 * t)
         return segs[-1][1]
 
-    def get_support_y(self, world_x: float) -> int:
-        """
-        world_x 위치에서
-        - 기본 바닥(ground_segments)
-        - 그 x를 덮고 있는 벽/지형지물의 "윗면"
-        중에서 가장 위(화면 기준 위쪽, 즉 y가 가장 작은 값)를 발판으로 사용.
+    def surface_y(self, rect: pygame.Rect) -> int:
+        base = self.surface_y_rect_x(rect.centerx)
+        return base - rect.height
 
-        NPC처럼 '딱 서 있는' 애들의 발바닥 y를 구할 때 사용.
-        """
-        # 기본 바닥 높이
-        ground_y = self.surface_y_rect_x(int(world_x))
-        support_y = ground_y
+    def get_support_y(self, world_x: int) -> int:
+        best = self.surface_y_rect_x(world_x)
+        for d in self.props:
+            if not d.get("solid", True):
+                continue
+            r: pygame.Rect = d["rect"]
+            if r.left <= world_x <= r.right and r.top < best:
+                best = r.top
+        return best
 
-        # 벽 + 지형지물 위도 발판으로 인정
-        for obj in (self.walls + self.props):
-            try:
-                ox = obj.get("x", 0)
-                oy = obj.get("y", 0)  # obj의 top
-                ow = obj.get("w", 0)
+    # ----------------------------
+    # 충돌 대상
+    # ----------------------------
+    def get_solid_rects(self) -> list[pygame.Rect]:
+        out = list(self.walls)
+        out += [d["rect"] for d in self.props if d.get("solid", True)]
+        return out
 
-                # 이 오브젝트가 world_x를 수평으로 덮고 있을 때만 후보
-                if ox <= world_x <= ox + ow:
-                    # y는 작을수록 화면 위 → '더 높은' 발판
-                    if oy < support_y:
-                        support_y = int(oy)
-            except Exception:
-                pass
+    # ----------------------------
+    # 사진
+    # ----------------------------
+    def _load_photo(self, path: str, w: int, h: int):
+        key = (path, w, h)
+        if key in self._photo_cache:
+            return self._photo_cache[key]
+        if not path or not os.path.exists(path):
+            self._photo_cache[key] = None
+            return None
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            img = pygame.transform.smoothscale(img, (w, h))
+            self._photo_cache[key] = img
+            return img
+        except Exception:
+            self._photo_cache[key] = None
+            return None
 
-        return support_y
-    def get_support_y(self, world_x: float) -> int:
-        """
-        world_x 위치에서
-        - 기본 바닥(ground_segments)
-        - 그 x를 덮고 있는 벽/지형지물의 "윗면"
-        중에서 가장 위(화면 기준 위쪽, 즉 y가 가장 작은 값)를 발판으로 사용.
+    def draw_photos(self, surf: pygame.Surface, camera_x: float) -> None:
+        for ph in self.photos:
+            x = int(ph["x"] - camera_x)
+            y = int(ph["y"])
+            w = int(ph["w"])
+            h = int(ph["h"])
+            img = self._load_photo(ph.get("path", ""), w, h)
+            if img:
+                surf.blit(img, (x, y))
+            else:
+                pygame.draw.rect(surf, (120, 120, 140), (x, y, w, h), 1)
 
-        NPC처럼 '딱 서 있는' 애들의 발바닥 y를 구할 때 사용.
-        """
-        # 기본 바닥 높이
-        ground_y = self.surface_y_rect_x(int(world_x))
-        support_y = ground_y
+    # ----------------------------
+    # 5×3 벽 그리드
+    # ----------------------------
+    def _apply_wall_grid_from_json(self, data: dict) -> None:
+        g = data.get("wall_grid")
+        if isinstance(g, dict):
+            self.wall_grid["cols"] = int(g.get("cols", self.wall_grid["cols"]))
+            self.wall_grid["rows"] = int(g.get("rows", self.wall_grid["rows"]))
+            self.wall_grid["cell"] = int(g.get("cell", self.wall_grid["cell"]))
+            org = g.get("origin")
+            if isinstance(org, (list, tuple)) and len(org) == 2:
+                self.wall_grid["origin"] = V2(int(org[0]), int(org[1]))
 
-        # 벽 + 지형지물 위도 발판으로 인정
-        for obj in (self.walls + self.props):
-            try:
-                ox = obj.get("x", 0)
-                oy = obj.get("y", 0)          # obj의 top
-                ow = obj.get("w", 0)
+        for pair in data.get("wall_cells", []):
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                self.wall_cells.add((int(pair[0]), int(pair[1])))
 
-                # 이 오브젝트가 world_x를 수평으로 덮고 있을 때만 후보
-                if ox <= world_x <= ox + ow:
-                    # y는 작을수록 화면 위 → '더 높은' 발판
-                    if oy < support_y:
-                        support_y = int(oy)
-            except Exception:
-                pass
+    def rebuild_walls_from_grid(self) -> None:
+        cols = self.wall_grid["cols"]
+        rows = self.wall_grid["rows"]
+        cell = self.wall_grid["cell"]
+        ox, oy = self.wall_grid["origin"]
+        self.walls = []
+        for (c, r) in self.wall_cells:
+            if 0 <= c < cols and 0 <= r < rows:
+                x = int(ox + c * cell)
+                y = int(oy + r * cell)
+                self.walls.append(pygame.Rect(x, y, cell, cell))
 
-        return support_y
+    def wall_cell_from_world(self, wx: float, wy: float):
+        cols = self.wall_grid["cols"]
+        rows = self.wall_grid["rows"]
+        cell = self.wall_grid["cell"]
+        ox, oy = self.wall_grid["origin"]
+        lx, ly = wx - ox, wy - oy
+        if lx < 0 or ly < 0:
+            return None
+        c = int(lx // cell)
+        r = int(ly // cell)
+        return (c, r) if (0 <= c < cols and 0 <= r < rows) else None
 
-    # 플레이어 rect의 바닥 y 결정
-    def surface_y(self, player_rect: pygame.Rect) -> int:
-        """
-        플레이어 rect의 중심 x 에서 지면 높이를 찾고,
-        그 위에 플레이어 키(rect.height)를 빼서 발바닥이 딱 닿도록 y를 돌려준다.
-        """
-        px_center = player_rect.centerx
-        base_y = self.surface_y_rect_x(px_center)
-        return base_y - player_rect.height
+    def toggle_wall_cell(self, c: int, r: int, set_to=None) -> None:
+        key = (c, r)
+        if set_to is None:
+            (self.wall_cells.remove(key) if key in self.wall_cells else self.wall_cells.add(key))
+        elif set_to:
+            self.wall_cells.add(key)
+        else:
+            self.wall_cells.discard(key)
+        self.rebuild_walls_from_grid()
+
+    def draw_wall_grid_overlay(self, surf, camera_x: float) -> None:
+        cols = self.wall_grid["cols"]
+        rows = self.wall_grid["rows"]
+        cell = self.wall_grid["cell"]
+        ox, oy = self.wall_grid["origin"]
+        sx0 = int(ox - camera_x)
+        sy0 = int(oy)
+        w = cols * cell
+        h = rows * cell
+
+        pygame.draw.rect(surf, (240, 240, 255), (sx0, sy0, w, h), 2)
+        for i in range(1, cols):
+            x = sx0 + i * cell
+            pygame.draw.line(surf, (200, 200, 220), (x, sy0), (x, sy0 + h), 1)
+        for j in range(1, rows):
+            y = sy0 + j * cell
+            pygame.draw.line(surf, (200, 200, 220), (sx0, y), (sx0 + w, y), 1)
+
+        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
+        for (c, r) in self.wall_cells:
+            pygame.draw.rect(overlay, (220, 80, 80, 90), (c * cell, r * cell, cell, cell))
+        surf.blit(overlay, (sx0, sy0))
+
+    # ----------------------------
+    # 배경/지면 렌더
+    # ----------------------------
+    def _draw_sky(self, surf):
+        for y in range(SCREEN_H):
+            t = y / max(1, SCREEN_H - 1)
+            r = int(self.sky_top[0] * (1 - t) + self.sky_bottom[0] * t)
+            g = int(self.sky_top[1] * (1 - t) + self.sky_bottom[1] * t)
+            b = int(self.sky_top[2] * (1 - t) + self.sky_bottom[2] * t)
+            pygame.draw.line(surf, (r, g, b), (0, y), (SCREEN_W, y))
+
+    def _draw_ground(self, surf, camera_x: float):
+        pts = [(int(x - camera_x), int(y)) for (x, y) in self.ground_segments]
+        pts = [(pts[0][0], SCREEN_H)] + pts + [(pts[-1][0], SCREEN_H)]
+        pygame.draw.polygon(surf, GROUND_LIGHT, pts)
+        pygame.draw.lines(surf, GROUND_DARK, False, pts[1:-1], 3)
+
+    def draw(self, surf, camera_x: float):
+        self._draw_sky(surf)
+        self._draw_ground(surf, camera_x)
+        self.draw_photos(surf, camera_x)

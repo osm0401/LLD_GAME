@@ -1,26 +1,32 @@
-# settings.py — 사이드뷰 공용 설정
+# settings.py
+# ---------------------------------------------------------
+# 프로젝트 전체에서 공유하는 설정 값.
+# 다른 파일들이 이 값을 임포트해 사용하므로
+# "이름/의미"를 명확히 유지하는 게 중요하다.
+# ---------------------------------------------------------
 
-SCREEN_W, SCREEN_H = 960, 540
+SCREEN_W = 960
+SCREEN_H = 540
 FPS = 60
 
-# 월드 크기(가로로 긴 사이드뷰)
+# 폰트 이름(시스템에 없을 경우 None 폰트로 fallback)
+FONT_NAME = "Malgun Gothic"
+
+# 월드 크기(사이드뷰이므로 가로만 길게)
 WORLD_W = 4800
 WORLD_H = SCREEN_H
 
-# 플레이어/물리
-PLAYER_SIZE = (36, 52)
-PLAYER_MAX_SPEED = 320.0      # 좌우 최고 속도(px/s)
-PLAYER_ACCEL = 2000.0         # 가속도
-PLAYER_FRICTION = 1800.0      # 가속 입력이 없을 때 감속
+# 하늘/지면 색
+SKY_TOP = (255, 210, 225)
+SKY_BOTTOM = (255, 230, 240)
+CLOUD = (250, 250, 255)
 
-# 지면
-GROUND_Y = SCREEN_H - 120     # 기본 지면 높이(px)
+GROUND_LIGHT = (120, 110, 125)
+GROUND_DARK = (90, 85, 98)
+GROUND_Y = int(SCREEN_H * 0.78)
 
-# 색상 팔레트(따뜻한 핑크 하늘 느낌)
-SKY_TOP = (255, 190, 210)
-SKY_BOTTOM = (255, 220, 230)
-CLOUD = (255, 245, 250)
-GROUND_DARK = (90, 76, 88)
-GROUND_LIGHT = (120, 102, 118)
-
-FONT_NAME = "malgungothic"    # 윈도우라면 말굿고딕, 없으면 자동 대체
+# 플레이어 이동
+PLAYER_SIZE = (36, 60)
+PLAYER_MAX_SPEED = 260
+PLAYER_ACCEL = 1200
+PLAYER_FRICTION = 1600

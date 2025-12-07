@@ -1,0 +1,15 @@
+{
+  "_meta": {
+    "id": "lab",
+    "world_w": 4800,
+    "world_h": 540,
+    "sky_top": [180, 210, 255],
+    "sky_bottom": [210, 235, 255]
+  },
+  "ground_segments": [[0, 420], [4800, 420]],
+  "walls": [],
+  "props": [],
+  "photos": [],
+  "wall_grid": { "cols": 5, "rows": 3, "cell": 80, "origin": [400, 180] },
+  "wall_cells": []
+}
