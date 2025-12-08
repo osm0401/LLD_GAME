@@ -527,6 +527,7 @@
   ('ipaddress',
    'C:\\Users\\cmo00\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\ipaddress.py',
    'PYMODULE'),
+  ('isac', 'C:\\Users\\cmo00\\PycharmProjects\\LLD_GAME\\isac.py', 'PYMODULE'),
   ('json',
    'C:\\Users\\cmo00\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\__init__.py',
    'PYMODULE'),
