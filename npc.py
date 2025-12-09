@@ -176,7 +176,9 @@ class NPC:
     # 업데이트(입력 처리)
     # ---------------------------
     def update(self, player_rect: pygame.Rect, events):
-        near = abs(player_rect.centerx - self.rect.centerx) <= self.range
+        dx = player_rect.centerx - self.rect.centerx
+        dy = player_rect.centery - self.rect.centery
+        near = (dx * dx + dy * dy) ** 0.5 <= self.range
         node = self._current_node()
         has_choices = isinstance(node, dict) and node.get("choices")
 
@@ -230,48 +232,65 @@ class NPC:
         surf.blit(box, (sx + self.w // 2 - box.get_width() // 2, sy - box.get_height() - 6))
         surf.blit(name_img, (sx + self.w // 2 - name_img.get_width() // 2, sy - box.get_height() - 4))
 
-    def draw_dialog(self, surf, camera_x: float, near: bool, screen_w: int, screen_h: int):
-        # 선택지 rect 캐시 초기화(매 프레임 최신 버튼만 유지)
-        self._choice_rects = []
-
+    def draw_dialog(self, surf: pygame.Surface, camera_x: float, near: bool,
+                    screen_w: int, screen_h: int,
+                    *, camera_y: float = 0.0, topdown: bool = False):
+        # -------------------------------------------------
+        # 1) 힌트: 가까이 있고 대화 중이 아닐 때
+        #    - 사이드뷰: NPC 위
+        #    - 탑다운: NPC 아래
+        # -------------------------------------------------
         if near and not self.talk_active:
             hint = self.font.render("SPACE: 대화하기", True, (30, 30, 40))
             box = pygame.Surface((hint.get_width() + 10, hint.get_height() + 6), pygame.SRCALPHA)
             box.fill((255, 255, 255, 180))
+
             sx = int(self.rect.centerx - camera_x) - box.get_width() // 2
-            sy = self.rect.top - 70
+
+            if topdown:
+                # ✅ 탑다운: NPC 바로 아래
+                sy = int(self.rect.bottom - camera_y) + 8
+                # 화면 밖으로 나가면 클램프
+                if sy + box.get_height() > screen_h - 4:
+                    sy = screen_h - box.get_height() - 4
+            else:
+                # ✅ 사이드뷰: 기존처럼 위쪽
+                sy = int(self.rect.top - camera_y) - 70
+
             surf.blit(box, (sx, sy))
-            surf.blit(hint, (sx + 5, sy + 4))
+            surf.blit(hint, (sx + 5, sy + 3))
             return
 
+        # -------------------------------------------------
+        # 2) 대화 중이 아니면 종료
+        # -------------------------------------------------
         if not self.talk_active:
             return
 
-        box_h = 170
+        # -------------------------------------------------
+        # 3) 대화 패널(기존 그대로)
+        # -------------------------------------------------
+        box_h = 150
         panel = pygame.Surface((screen_w, box_h), pygame.SRCALPHA)
         panel.fill((18, 20, 24, 235))
         surf.blit(panel, (0, screen_h - box_h))
 
+        # 이름 + 방문 뱃지
         title = f"{self.name}  ·  {self.visit_count}번째 만남"
         name_img = self.big.render(title, True, (250, 230, 170))
-        surf.blit(name_img, (16, screen_h - box_h + 10))
-
-        node = self._current_node()
-
-        # 노드가 dict면 text/choices 분리
-        if isinstance(node, dict):
-            text = node.get("text", "...")
-            choices = node.get("choices", [])
-        else:
-            text = node
-            choices = []
+        surf.blit(name_img, (16, screen_h - box_h + 12))
 
         # 본문
-        x0, y0 = 16, screen_h - box_h + 44
+        text = self.active_lines[min(self._idx, len(self.active_lines) - 1)]
+        x0, y0 = 16, screen_h - box_h + 48
         max_w = screen_w - 32
         for i, ln in enumerate(_wrap_text(text, self.font, max_w)):
             line_img = self.font.render(ln, True, (235, 235, 240))
             surf.blit(line_img, (x0, y0 + i * 22))
+
+        # 힌트
+        hint = self.font.render("SPACE: 다음  |  마지막에서 닫힘", True, (200, 200, 210))
+        surf.blit(hint, (screen_w - hint.get_width() - 12, screen_h - hint.get_height() - 10))
 
         # 선택지 렌더
         if choices:

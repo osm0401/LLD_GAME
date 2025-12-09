@@ -9,6 +9,12 @@ SCREEN_W = 960
 SCREEN_H = 540
 FPS = 60
 
+SCREEN_W = 1280
+SCREEN_H = 720
+FPS = 60
+FONT_NAME = "malgungothic"  # 또는 너가 쓰는 폰트 이름
+PLAYER_SIZE = (32, 56)
+
 # 폰트 이름(시스템에 없을 경우 None 폰트로 fallback)
 FONT_NAME = "Malgun Gothic"
 
