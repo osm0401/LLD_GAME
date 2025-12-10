@@ -26,7 +26,10 @@ GROUND_DARK = (90, 85, 98)
 GROUND_Y = int(SCREEN_H * 0.78)
 
 # 플레이어 이동
-PLAYER_SIZE = (36, 60)
+PLAYER_SIZE = (72,90)
 PLAYER_MAX_SPEED = 260
 PLAYER_ACCEL = 1200
 PLAYER_FRICTION = 1600
+# settings.py
+
+PLAYER_SPRITE = "assets/characters/player.png"

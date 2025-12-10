@@ -18,16 +18,23 @@ class Player:
         self.w, self.h = getattr(S, "PLAYER_SIZE", (32, 56))
         self.facing = 1
 
-        # ✅ 중요: 모드 기본값
         self.mode = "side"
-
-        # 탑다운 속도
         self.top_speed = getattr(S, "TOPDOWN_SPEED", 220)
 
-        # 사이드 이동 파라미터(없으면 기본값)
         self.accel = getattr(S, "PLAYER_ACCEL", 1200)
         self.friction = getattr(S, "PLAYER_FRICTION", 1600)
         self.max_speed = getattr(S, "PLAYER_MAX_SPEED", 260)
+
+        # ✅ 플레이어 사진/스프라이트 로드
+        self.sprite = None
+        sprite_path = getattr(S, "PLAYER_SPRITE", None)
+        if sprite_path:
+            try:
+                print("[player] player.png 로드 완료")
+                img = pygame.image.load(sprite_path).convert_alpha()
+                self.sprite = pygame.transform.smoothscale(img, (self.w, self.h))
+            except Exception:
+                self.sprite = None
 
     @property
     def rect(self):
@@ -79,7 +86,6 @@ class Player:
             self._move_axis(dx, 0, solids)
             self._move_axis(0, dy, solids)
 
-            # 월드 클램프
             ww = getattr(level, "world_w", S.SCREEN_W)
             wh = getattr(level, "world_h", S.SCREEN_H)
             self.pos.x = max(0, min(ww - self.w, self.pos.x))
@@ -111,7 +117,6 @@ class Player:
         ww = getattr(level, "world_w", S.SCREEN_W)
         self.pos.x = max(0, min(ww - self.w, self.pos.x))
 
-        # 수평 솔리드 충돌
         solids = level.get_solid_rects() if hasattr(level, "get_solid_rects") else []
         r = self.rect
         for s in solids:
@@ -123,7 +128,6 @@ class Player:
                 self.vel.x = 0
                 r = self.rect
 
-        # 바닥 스냅(레벨이 지원할 때만)
         if hasattr(level, "surface_y"):
             self.pos.y = level.surface_y(self.rect)
 
@@ -131,6 +135,15 @@ class Player:
         x = int(self.pos.x - camera_x)
         y = int(self.pos.y - camera_y)
 
+        # ✅ 사진이 있으면 사진으로 렌더
+        if self.sprite:
+            img = self.sprite
+            if self.facing < 0:
+                img = pygame.transform.flip(img, True, False)
+            surf.blit(img, (x, y))
+            return
+
+        # 폴백(기존 사각형)
         body = pygame.Rect(x, y, self.w, self.h)
         pygame.draw.rect(surf, (120, 160, 255), body, border_radius=6)
 
