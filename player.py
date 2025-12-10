@@ -27,6 +27,7 @@ class Player:
 
         # ✅ 플레이어 사진/스프라이트 로드
         self.sprite = None
+
         sprite_path = getattr(S, "PLAYER_SPRITE", None)
         if sprite_path:
             try:
