@@ -1,21 +1,14 @@
-# main.py
-# ------------------------------------------------------------
-# 카지노: 사이드뷰(A/D + 바닥 스냅)
-# 연구실: 아이작식 탑다운(WASD)
-#
-# 기능
-# - SPACE: NPC 대화
-# - E: 인벤토리 토글
-# - F: 워프 게이트 상호작용
-# - 연구실 입장 시 TopdownView로 렌더/카메라 전환
-# ------------------------------------------------------------
+# npc.py — 사이드뷰 + 탑다운 공용 NPC
+# - SPACE로 대화
+# - 근처에 있을 때만 대화 가능(2D 거리)
+# - draw_dialog는 camera_y, topdown 옵션까지 지원해서
+#   main.py 의 두 가지 호출 모두 정상 작동
 
+import os
+import random
 import pygame
-import settings as S
-from player import Player
-from level import Level
-from npc import NPC
-from isac import TopdownView
+from pygame.math import Vector2 as V2
+from settings import FONT_NAME
 
 
 def _sysfont(name, size):
@@ -25,357 +18,282 @@ def _sysfont(name, size):
         return pygame.font.SysFont(None, size)
 
 
-class _NoKeys:
-    """대화/인벤토리 중 이동 입력 차단용."""
-    def __getitem__(self, k):
-        return False
+def _wrap_text(text, font, max_w):
+    """아주 단순한 줄바꿈: 공백 기준으로 끊어서 max_w 안에 맞춤."""
+    words = text.split(" ")
+    lines, cur = [], ""
+    for w in words:
+        test = (cur + " " + w).strip()
+        if font.size(test)[0] <= max_w or not cur:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines
 
 
-# ------------------------------------------------------------
-# 인벤토리(지금은 UI만 유지)
-# ------------------------------------------------------------
-class Inventory:
-    def __init__(self, font):
-        self.font = font
-        self.is_open = False
-        self.cell = 48
-        self.gap = 6
+class NPC:
+    """
+    사용법 1) 기본
+        npc = NPC("워니", 1400, level)
+        → 기본 대사 3줄 사용
 
-        self.weapon_slots = [None, None]
-        self.evience_slots = [None, None, None, None, None]
+    사용법 2) 방문 횟수별 대사
+        npc = NPC("워니", 1400, level, lines_by_visit=[
+            ["첫 방문 1", "첫 방문 2"],
+            ["두 번째 방문 1", ...],
+            ["세 번째 방문 ..."],
+            ["네 번째 방문 ..."],
+        ])
 
-        self.weapon_slots[0] = {"name": "장검"}
-        self.weapon_slots[1] = {"name": "단검"}
-        self.evience_slots[0] = {"name": "은행의 비밀 장부"}
+        # ✔ 5번 이상 방문하면 3~4번 세트 중 랜덤 선택
+        visit >= 5 이고 lines_by_visit 길이가 4 이상이면,
+        3번째(index 2)와 4번째(index 3) 세트 중 하나를 랜덤으로 사용.
+    """
 
-    def toggle(self):
-        self.is_open = not self.is_open
+    def __init__(
+        self,
+        name: str,
+        world_x: int,
+        level,
+        lines=None,          # 예전 방식: 한 세트 대사
+        lines_by_visit=None, # 새 방식: 방문 횟수별 대사 세트(list or dict)
+        sprite_path="assets/sprites/npc_side.png",
+    ):
+        self.name = name
+        self.w, self.h = 32, 56
 
-    def draw(self, surf):
-        if not self.is_open:
-            return
+        # 바닥/지형지물 위에 서게 함
+        if hasattr(level, "get_support_y"):
+            base_y = level.get_support_y(world_x)
+        else:
+            base_y = level.surface_y_rect_x(world_x)
+        y_top = base_y - self.h
+        self.pos = V2(world_x, y_top)
 
-        w = int(S.SCREEN_W * 0.6)
-        h = int(S.SCREEN_H * 0.6)
-        panel = pygame.Surface((w, h), pygame.SRCALPHA)
-        panel.fill((15, 18, 25, 235))
-        rect = panel.get_rect(center=(S.SCREEN_W // 2, S.SCREEN_H // 2))
-        surf.blit(panel, rect.topleft)
+        # 대사 데이터
+        self.lines = list(lines) if lines else [
+            "안녕, 여행자. 바람이 고요하네.",
+            "엘테리아로 가려면 다리를 따라 서쪽으로.",
+            "돈의 흐름이 변하면 세상도 변하지.",
+        ]
+        self.lines_by_visit = lines_by_visit  # list[list[str]] 또는 dict[int, list[str]]
+        self.active_lines: list[str] = []     # 이번 대화에서 사용할 세트
 
-        title = self.font.render("인벤토리 (E로 닫기)", True, (250, 230, 170))
-        surf.blit(title, (rect.x + 20, rect.y + 20))
+        # 상태
+        self.talk_active = False
+        self._idx = 0               # 현재 줄 인덱스
+        self.range = 90             # 상호작용 범위(px)
+        self.visit_count = 0        # 대화를 "시작"한 횟수(열릴 때 +1)
 
-        cell, gap = self.cell, self.gap
-        base_x = rect.x + 20
-        base_y = rect.y + 60
+        # 폰트
+        self.font = _sysfont(FONT_NAME, 18)
+        self.big = _sysfont(FONT_NAME, 22)
 
-        # 1) 사진 슬롯(2x3을 합친 큰 슬롯)
-        avatar_cols, avatar_rows = 2, 3
-        total_w = avatar_cols * cell + (avatar_cols - 1) * gap
-        total_h = avatar_rows * cell + (avatar_rows - 1) * gap
-        avatar_area = pygame.Rect(base_x, base_y, total_w, total_h)
+        # 스프라이트
+        self.sprite = None
+        if os.path.exists(sprite_path):
+            try:
+                img = pygame.image.load(sprite_path).convert_alpha()
+                self.sprite = pygame.transform.smoothscale(img, (self.w, self.h))
+            except Exception:
+                self.sprite = None
 
-        pygame.draw.rect(surf, (65, 70, 95), avatar_area)
-        pygame.draw.rect(surf, (230, 230, 240), avatar_area, 2)
-
-        photo_text = self.font.render("사진", True, (230, 230, 240))
-        surf.blit(photo_text, (
-            avatar_area.centerx - photo_text.get_width() // 2,
-            avatar_area.centery - photo_text.get_height() // 2
-        ))
-
-        # 2) 무기 2개(각각 2칸 연결)
-        weapon_label = self.font.render("무기", True, (230, 230, 240))
-        weapon_origin_x = avatar_area.right + 40
-        weapon_origin_y = base_y
-        surf.blit(weapon_label, (weapon_origin_x, weapon_origin_y - 26))
-
-        slot_width = 2 * cell + gap
-        slot_height = cell
-
-        for i, item in enumerate(self.weapon_slots):
-            sx = weapon_origin_x
-            sy = weapon_origin_y + i * (slot_height + 20)
-            big_rect = pygame.Rect(sx, sy, slot_width, slot_height)
-
-            pygame.draw.rect(surf, (60, 65, 85), big_rect)
-            pygame.draw.rect(surf, (220, 220, 230), big_rect, 2)
-
-            if item and "name" in item:
-                txt = self.font.render(item["name"], True, (235, 235, 245))
-                surf.blit(txt, (
-                    big_rect.centerx - txt.get_width() // 2,
-                    big_rect.centery - txt.get_height() // 2
-                ))
-
-        # 3) 소모품 5칸
-        consum_label = self.font.render("소모품", True, (230, 230, 240))
-        cons_origin_x = weapon_origin_x
-        cons_origin_y = rect.bottom - 30 - cell
-        surf.blit(consum_label, (cons_origin_x, cons_origin_y - 26))
-
-        for i in range(5):
-            cx = cons_origin_x + i * (cell + gap)
-            cy = cons_origin_y
-            c_rect = pygame.Rect(cx, cy, cell, cell)
-
-            pygame.draw.rect(surf, (60, 65, 85), c_rect)
-            pygame.draw.rect(surf, (220, 220, 230), c_rect, 2)
-
-            item = self.evience_slots[i]
-            if item and "name" in item:
-                txt = self.font.render(item["name"], True, (235, 235, 245))
-                surf.blit(txt, (c_rect.x + 4, c_rect.y + c_rect.h // 2 - txt.get_height() // 2))
-
-
-# ------------------------------------------------------------
-# 워프 게이트
-# ------------------------------------------------------------
-class WarpGate:
-    def __init__(self, world_x, level, label, target_scene):
-        self.w, self.h = 40, 90
-        base_y = level.get_support_y(world_x) if hasattr(level, "get_support_y") else level.surface_y_rect_x(world_x)
-        self.x = world_x - self.w // 2
-        self.y = base_y - self.h
-
-        self.label = label
-        self.target_scene = target_scene
-        self.range = 90
-        self.font = _sysfont(S.FONT_NAME, 18)
-
+    # -------------------------------------------------
+    # 위치/충돌용 rect
+    # -------------------------------------------------
     @property
     def rect(self):
-        return pygame.Rect(int(self.x), int(self.y), self.w, self.h)
+        return pygame.Rect(int(self.pos.x), int(self.pos.y), self.w, self.h)
 
-    def update(self, player_rect, events):
-        # 2D 거리 기반으로 안전하게
+    # -------------------------------------------------
+    # 대사 세트 선택
+    # -------------------------------------------------
+    def _select_lines_for_visit(self, visit: int) -> list[str]:
+        """
+        방문 횟수에 따라 사용할 대사 리스트를 결정.
+
+        - dict: visit 키가 있으면 해당 리스트 사용.
+                없으면 visit보다 작은 키 중 최댓값 사용.
+        - list: 인덱스 기반.
+                visit-1이 범위를 벗어나면 마지막 인덱스 사용.
+                ✔ visit >= 5 and len >= 4이면
+                  index 2와 3 중 하나를 랜덤으로 사용 (3~4번 세트 랜덤).
+        - 둘 다 없으면 self.lines 사용.
+        """
+        # dict 버전
+        if isinstance(self.lines_by_visit, dict):
+            if visit in self.lines_by_visit:
+                return list(self.lines_by_visit[visit])
+            candidates = [k for k in self.lines_by_visit.keys()
+                          if isinstance(k, int) and k <= visit]
+            if candidates:
+                return list(self.lines_by_visit[max(candidates)])
+
+        # list 버전
+        if isinstance(self.lines_by_visit, list) and self.lines_by_visit:
+            n = len(self.lines_by_visit)
+
+            # ✅ 5 이상일 때 3~4번 세트 중 랜덤 (index 2 or 3)
+            if visit >= 5 and n >= 4:
+                idx = random.choice([2, 3])
+                return list(self.lines_by_visit[idx])
+
+            # 그 외는 기본 인덱스 로직
+            idx = min(max(visit - 1, 0), n - 1)
+            return list(self.lines_by_visit[idx])
+
+        # fallback: 항상 동일 세트
+        return list(self.lines)
+
+    def _start_conversation(self):
+        """SPACE를 처음 눌러 대화를 열 때 호출."""
+        self.visit_count += 1
+        self.active_lines = self._select_lines_for_visit(self.visit_count)
+        if not self.active_lines:
+            self.active_lines = ["..."]
+        self._idx = 0
+        self.talk_active = True
+
+    # -------------------------------------------------
+    # 상태 업데이트 (키 입력 포함)
+    # -------------------------------------------------
+    def update(self, player_rect: pygame.Rect, events) -> bool:
+        """
+        - 플레이어와의 거리 체크
+        - SPACE 입력으로 대화 시작/다음 줄 진행
+        - near: 플레이어가 대화 가능 거리 안에 있는지 여부 리턴
+        """
+
+        # ✅ 2D 거리(탑다운/사이드 공통)
         dx = player_rect.centerx - self.rect.centerx
         dy = player_rect.centery - self.rect.centery
         near = (dx * dx + dy * dy) ** 0.5 <= self.range
 
-        activated = False
         for e in events:
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_f and near:
-                activated = True
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE and near:
+                if not self.talk_active:
+                    self._start_conversation()
+                else:
+                    # 다음 줄로
+                    self._idx += 1
+                    if self._idx >= len(self.active_lines):
+                        # 끝까지 봤으면 종료
+                        self.talk_active = False
 
-        return near, activated
+        return near
 
-    def draw_side(self, surf, camera_x):
-        sx = int(self.x - camera_x)
-        sy = int(self.y)
-        r = pygame.Rect(sx, sy, self.w, self.h)
-        pygame.draw.rect(surf, (120, 220, 255), r, border_radius=10)
-        pygame.draw.rect(surf, (20, 40, 60), r, 2)
+    # -------------------------------------------------
+    # 본체 그리기 (월드→스크린 변환은 camera_x만 사용)
+    # -------------------------------------------------
+    def draw(self, surf: pygame.Surface, camera_x: float):
+        sx = int(self.pos.x - camera_x)
+        sy = int(self.pos.y)
 
-    def draw_hint_side(self, surf, camera_x, near):
-        if not near:
+        if self.sprite:
+            surf.blit(self.sprite, (sx, sy))
+        else:
+            body = pygame.Rect(sx, sy, self.w, self.h)
+            pygame.draw.rect(surf, (210, 120, 120), body, border_radius=6)
+            pygame.draw.polygon(
+                surf,
+                (80, 40, 40),
+                [(sx - 4, sy + 12),
+                 (sx + self.w // 2, sy - 6),
+                 (sx + self.w + 4, sy + 12)]
+            )
+            pygame.draw.rect(
+                surf,
+                (120, 60, 60),
+                (sx + 4, sy + 18, self.w - 8, self.h - 22),
+                border_radius=4,
+            )
+
+        # 이름 라벨
+        name_img = self.big.render(self.name, True, (40, 30, 35))
+        name_box = pygame.Surface(
+            (name_img.get_width() + 10, name_img.get_height() + 4),
+            pygame.SRCALPHA
+        )
+        name_box.fill((255, 255, 255, 160))
+        nbx = sx + self.w // 2 - name_box.get_width() // 2
+        nby = sy - name_box.get_height() - 6
+        surf.blit(name_box, (nbx, nby))
+        surf.blit(name_img, (nbx + 5, nby + 2))
+
+    # -------------------------------------------------
+    # 대화/힌트 UI
+    # -------------------------------------------------
+    def draw_dialog(
+        self,
+        surf: pygame.Surface,
+        camera_x: float,
+        near: bool,
+        screen_w: int,
+        screen_h: int,
+        *,
+        camera_y: float = 0.0,
+        topdown: bool = False,
+    ):
+        """
+        - near & not talk_active: "SPACE: 대화하기" 힌트
+          * 사이드뷰: NPC 위에 표시
+          * 탑다운: NPC 아래에 표시
+        - talk_active: 화면 하단 대화 패널
+        """
+
+        # 1) 힌트
+        if near and not self.talk_active:
+            hint = self.font.render("SPACE: 대화하기", True, (30, 30, 40))
+            box = pygame.Surface(
+                (hint.get_width() + 10, hint.get_height() + 6),
+                pygame.SRCALPHA,
+            )
+            box.fill((255, 255, 255, 180))
+
+            sx = int(self.rect.centerx - camera_x) - box.get_width() // 2
+
+            if topdown:
+                # ✅ 탑다운: NPC 바로 아래
+                sy = int(self.rect.bottom - camera_y) + 8
+                if sy + box.get_height() > screen_h - 4:
+                    sy = screen_h - box.get_height() - 4
+            else:
+                # ✅ 사이드뷰: 기존처럼 위쪽
+                sy = int(self.rect.top - camera_y) - 70
+
+            surf.blit(box, (sx, sy))
+            surf.blit(hint, (sx + 5, sy + 3))
             return
-        text = self.font.render(f"F: {self.label}", True, (30, 30, 40))
-        box = pygame.Surface((text.get_width() + 10, text.get_height() + 6), pygame.SRCALPHA)
-        box.fill((255, 255, 255, 210))
 
-        sx = int(self.rect.centerx - camera_x) - box.get_width() // 2
-        sy = self.rect.top - 50
-        surf.blit(box, (sx, sy))
-        surf.blit(text, (sx + 5, sy + 3))
+        # 2) 대화 중이 아니면 끝
+        if not self.talk_active:
+            return
 
+        # 3) 하단 대화 패널
+        box_h = 150
+        panel = pygame.Surface((screen_w, box_h), pygame.SRCALPHA)
+        panel.fill((18, 20, 24, 235))
+        surf.blit(panel, (0, screen_h - box_h))
 
-# ------------------------------------------------------------
-# 씬 빌드
-# ------------------------------------------------------------
-def build_scene(scene_id: str):
-    """
-    반환:
-      level, spawn_pos(x,y), npc, gate
-    """
+        # 이름 + 방문 뱃지
+        title = f"{self.name}  ·  {self.visit_count}번째 만남"
+        name_img = self.big.render(title, True, (250, 230, 170))
+        surf.blit(name_img, (16, screen_h - box_h + 12))
 
-    if scene_id == "casino":
-        level = Level("casino_map.json")
+        # 본문 텍스트
+        text = self.active_lines[min(self._idx, len(self.active_lines) - 1)]
+        x0, y0 = 16, screen_h - box_h + 48
+        max_w = screen_w - 32
+        for i, ln in enumerate(_wrap_text(text, self.font, max_w)):
+            line_img = self.font.render(ln, True, (235, 235, 240))
+            surf.blit(line_img, (x0, y0 + i * 22))
 
-        spawn_x = 1200
-        # 사이드뷰 시작 y는 바닥에 붙이기
-        spawn_y = level.surface_y(pygame.Rect(spawn_x, 0, *S.PLAYER_SIZE))
-
-        npc = NPC("워니", 1400, level)
-        gate = WarpGate(2000, level, "연구실로 이동", "lab")
-
-        return level, (spawn_x, spawn_y), npc, gate
-
-    if scene_id == "lab":
-        level = Level("map_lab.json")
-
-        # 탑다운은 바닥 스냅이 없으니 적당히 안전한 위치
-        spawn_x = 400
-        spawn_y = 200
-
-        # ✅ 연구실 대화는 상미니
-        npc = NPC("상미니", 600, level)
-        gate = WarpGate(300, level, "카지노로 돌아가기", "casino")
-
-        return level, (spawn_x, spawn_y), npc, gate
-
-    # fallback
-    return build_scene("casino")
-
-
-# ------------------------------------------------------------
-# 메인
-# ------------------------------------------------------------
-def main():
-    pygame.init()
-    screen = pygame.display.set_mode((S.SCREEN_W, S.SCREEN_H))
-    clock = pygame.time.Clock()
-    font = _sysfont(S.FONT_NAME, 18)
-
-    inventory = Inventory(font)
-    top = TopdownView()  # ✅ 연구실 탑다운 컨트롤러
-
-    # 첫 씬
-    current_scene = "casino"
-    level, spawn_pos, npc, gate = build_scene(current_scene)
-
-    player = Player(spawn_pos)
-
-    # 사이드뷰 카메라
-    camera_x = 0.0
-
-    running = True
-    while running:
-        dt = clock.tick(S.FPS) / 1000.0
-        events = pygame.event.get()
-
-        # -------------------------
-        # 기본 이벤트
-        # -------------------------
-        for e in events:
-            if e.type == pygame.QUIT:
-                running = False
-            elif e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_e:
-                    inventory.toggle()
-
-        # -------------------------
-        # 씬별 모드 전환
-        # -------------------------
-        if current_scene == "lab":
-            top.enter(player)
-        else:
-            top.exit(player)
-
-        # -------------------------
-        # 인벤 열림 시 NPC/게이트 입력 일부 제한
-        # -------------------------
-        npc_events = events
-        if inventory.is_open:
-            filtered = []
-            for e in events:
-                if e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE:
-                    continue
-                filtered.append(e)
-            npc_events = filtered
-
-        # -------------------------
-        # NPC 업데이트
-        # -------------------------
-        near_npc = npc.update(player.rect, npc_events)
-
-        # -------------------------
-        # 게이트 업데이트
-        # -------------------------
-        near_gate, gate_on = gate.update(player.rect, events)
-
-        # -------------------------
-        # 입력 처리
-        # -------------------------
-        keys = pygame.key.get_pressed()
-
-        # 대화/인벤 중 이동 차단
-        if getattr(npc, "talk_active", False) or inventory.is_open:
-            keys_use = _NoKeys()
-        else:
-            keys_use = keys
-
-        # -------------------------
-        # 플레이어 업데이트
-        # -------------------------
-        player.update(dt, keys_use, level)
-
-        # -------------------------
-        # 워프 처리
-        # -------------------------
-        if gate_on:
-            current_scene = gate.target_scene
-            level, spawn_pos, npc, gate = build_scene(current_scene)
-            player.pos.x, player.pos.y = spawn_pos
-            # 탑다운 진입 즉시 카메라 리셋 느낌
-            if current_scene == "lab":
-                top.camera_x = 0.0
-                top.camera_y = 0.0
-            else:
-                camera_x = 0.0
-
-        # -------------------------
-        # 카메라 업데이트
-        # -------------------------
-        if current_scene == "casino":
-            # 사이드뷰 카메라
-            target = player.pos.x + player.w / 2 - S.SCREEN_W / 2
-            if level.world_w > S.SCREEN_W:
-                target = max(0, min(level.world_w - S.SCREEN_W, target))
-            else:
-                target = 0
-            camera_x += (target - camera_x) * min(1.0, dt * 8.0)
-
-        else:
-            # 탑다운 카메라
-            top.update(dt, player, level)
-
-        # -------------------------
-        # 렌더
-        # -------------------------
-        if current_scene == "casino":
-            level.draw(screen, camera_x)
-            gate.draw_side(screen, camera_x)
-            npc.draw(screen, camera_x)
-            player.draw(screen, camera_x)
-
-            # 힌트/대사
-            gate.draw_hint_side(screen, camera_x, near_gate)
-            npc.draw_dialog(screen, camera_x, near_npc, S.SCREEN_W, S.SCREEN_H)
-
-        else:
-            # ✅ 연구실: 아이작식 탑다운 렌더
-            top.draw(screen, level, player, npcs=[npc], gates=[gate])
-
-            # 탑다운에서도 대화 UI는 화면 고정 UI라 그대로 사용 가능
-            # (camera_x만 받는 구조라면 0 넣어도 됨)
-            try:
-                npc.draw_dialog(screen, 0, near_npc, S.SCREEN_W, S.SCREEN_H)
-            except Exception:
-                pass
-
-        # 인벤 UI
-        inventory.draw(screen)
-
-        # -------------------------
-        # 도움말
-        # -------------------------
-        help_lines = [
-            "카지노: A/D 이동  SPACE 대화  E 인벤  F 워프",
-            "연구실: WASD 이동(아이작 시점)  SPACE 대화  E 인벤  F 워프",
-            f"현재 씬: {current_scene}",
-        ]
-        for i, s in enumerate(help_lines):
-            img = font.render(s, True, (30, 30, 40))
-            box = pygame.Surface((img.get_width() + 10, img.get_height() + 4), pygame.SRCALPHA)
-            box.fill((255, 255, 255, 150))
-            screen.blit(box, (10, 10 + i * 22))
-            screen.blit(img, (15, 12 + i * 22))
-
-        pygame.display.flip()
-
-    pygame.quit()
-
-
-if __name__ == "__main__":
-    main()
+        # 힌트 (다음/닫기)
+        hint = self.font.render("SPACE: 다음  |  마지막에서 닫힘", True, (200, 200, 210))
+        surf.blit(
+            hint,
+            (screen_w - hint.get_width() - 12, screen_h - hint.get_height() - 10),
+        )
