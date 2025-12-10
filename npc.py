@@ -1,11 +1,12 @@
 # npc.py
 # ---------------------------------------------------------
-# 사이드뷰 NPC + 방문횟수별 대사 + 선택지 지원.
+# 사이드뷰/탑다운 공용 NPC
+# 방문횟수별 대사 + 선택지 지원.
 #
 # 핵심 기능
 # 1) DIALOGUE_DB에서 npc_id로 대사 로드
 # 2) 방문 1~4: 순서대로
-# 3) 방문 5 이상: 3~4 세트 중 랜덤
+# 3) 방문 5 이상: 3~4 세트 중 랜덤 (존재할 때)
 # 4) 대사 노드가 dict면 선택지 처리
 #    - {"text": "...", "choices":[{"label":"...", "next":[...]}]}
 #
@@ -13,11 +14,13 @@
 # - 키보드 1~9
 # - 마우스 클릭
 #
-# 주의
-# - 선택지 렌더에서 만든 버튼 rect를
-#   self._choice_rects에 저장해 update에서 클릭 판정
+# 안전성 개선
+# - choices 기본값을 항상 정의
+# - 근접 판정 2D 거리 기반
+# - level 지원 함수 없을 때도 안전한 base_y 사용
 # ---------------------------------------------------------
 
+from __future__ import annotations
 import random
 import pygame
 from pygame.math import Vector2 as V2
@@ -32,7 +35,9 @@ def _sysfont(name, size):
 
 
 def _wrap_text(text, font, max_w):
-    words = str(text).split(" ")
+    # 안전한 문자열 처리
+    s = "" if text is None else str(text)
+    words = s.split(" ")
     lines, cur = [], ""
     for w in words:
         test = (cur + " " + w).strip()
@@ -92,10 +97,18 @@ class NPC:
     def __init__(self, npc_id: str, world_x: int, level, sprite_path=None):
         self.npc_id = npc_id
         self.name = npc_id
+
+        # 기본 크기
         self.w, self.h = 32, 56
 
-        # 바닥/지형지물 위에 서기
-        base_y = level.get_support_y(world_x)
+        # 바닥/지형지물 위에 서기 (안전 처리)
+        if hasattr(level, "get_support_y"):
+            base_y = level.get_support_y(world_x)
+        elif hasattr(S, "GROUND_Y"):
+            base_y = S.GROUND_Y
+        else:
+            base_y = int(getattr(S, "SCREEN_H", 540) * 0.78)
+
         self.pos = V2(world_x, base_y - self.h)
 
         cfg = DIALOGUE_DB.get(npc_id, {})
@@ -105,11 +118,14 @@ class NPC:
         self.visit_count = 0
         self._idx = 0
         self.talk_active = False
+
+        # 근접 범위(px)
         self.range = 90
 
-        self.font = _sysfont(S.FONT_NAME, 18)
-        self.big = _sysfont(S.FONT_NAME, 22)
+        self.font = _sysfont(getattr(S, "FONT_NAME", None), 18)
+        self.big = _sysfont(getattr(S, "FONT_NAME", None), 22)
 
+        # 스프라이트
         self.sprite = None
         if sprite_path:
             try:
@@ -131,7 +147,7 @@ class NPC:
     def _select_lines_for_visit(self, visit: int):
         sets = self.lines_by_visit or [["..."]]
 
-        # ✅ 5 이상일 때 3~4번 중 랜덤
+        # 5 이상일 때 3~4번 중 랜덤(존재할 때)
         if visit >= 5 and len(sets) >= 4:
             return list(random.choice([sets[2], sets[3]]))
 
@@ -153,6 +169,10 @@ class NPC:
     # 선택지 적용
     # ---------------------------
     def _apply_choice(self, choice: dict):
+        if not isinstance(choice, dict):
+            self.talk_active = False
+            return
+
         nxt = choice.get("next")
 
         # next가 리스트면 그걸 새 대사 세트로
@@ -173,20 +193,30 @@ class NPC:
         self.talk_active = False
 
     # ---------------------------
+    # 2D 거리 기반 근접 판정
+    # ---------------------------
+    def _is_near(self, player_rect: pygame.Rect) -> bool:
+        dx = player_rect.centerx - self.rect.centerx
+        dy = player_rect.centery - self.rect.centery
+        return (dx * dx + dy * dy) ** 0.5 <= self.range
+
+    # ---------------------------
     # 업데이트(입력 처리)
     # ---------------------------
     def update(self, player_rect: pygame.Rect, events):
-        dx = player_rect.centerx - self.rect.centerx
-        dy = player_rect.centery - self.rect.centery
-        near = (dx * dx + dy * dy) ** 0.5 <= self.range
+        near = self._is_near(player_rect)
         node = self._current_node()
-        has_choices = isinstance(node, dict) and node.get("choices")
+
+        # 현재 노드에 선택지가 있는지
+        has_choices = isinstance(node, dict) and isinstance(node.get("choices", None), list) and len(node.get("choices")) > 0
 
         for e in events:
             # 대화 시작/진행
             if e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE and near:
                 if not self.talk_active:
                     self._start_conversation()
+                    node = self._current_node()
+                    has_choices = isinstance(node, dict) and isinstance(node.get("choices", None), list) and len(node.get("choices")) > 0
                 else:
                     # 선택지 노드에서는 SPACE로 넘기지 않게(실수 방지)
                     if has_choices:
@@ -202,6 +232,7 @@ class NPC:
                     choices = node.get("choices", [])
                     if 0 <= ci < len(choices):
                         self._apply_choice(choices[ci])
+                        node = self._current_node()
 
             # 마우스 선택지 클릭
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.talk_active and has_choices:
@@ -214,7 +245,7 @@ class NPC:
         return near
 
     # ---------------------------
-    # 그리기
+    # 그리기(사이드 기준)
     # ---------------------------
     def draw(self, surf, camera_x: float):
         sx = int(self.pos.x - camera_x)
@@ -226,88 +257,85 @@ class NPC:
             body = pygame.Rect(sx, sy, self.w, self.h)
             pygame.draw.rect(surf, (210, 120, 120), body, border_radius=6)
 
+        # 이름표
         name_img = self.big.render(self.name, True, (40, 30, 35))
         box = pygame.Surface((name_img.get_width() + 10, name_img.get_height() + 4), pygame.SRCALPHA)
         box.fill((255, 255, 255, 160))
         surf.blit(box, (sx + self.w // 2 - box.get_width() // 2, sy - box.get_height() - 6))
         surf.blit(name_img, (sx + self.w // 2 - name_img.get_width() // 2, sy - box.get_height() - 4))
 
-    def draw_dialog(self, surf: pygame.Surface, camera_x: float, near: bool,
-                    screen_w: int, screen_h: int,
-                    *, camera_y: float = 0.0, topdown: bool = False):
-        # -------------------------------------------------
-        # 1) 힌트: 가까이 있고 대화 중이 아닐 때
-        #    - 사이드뷰: NPC 위
-        #    - 탑다운: NPC 아래
-        # -------------------------------------------------
+    # ---------------------------
+    # 대화 UI (화면 고정)
+    # - camera_x는 힌트 위치 계산용
+    # ---------------------------
+    def draw_dialog(self, surf, camera_x: float, near: bool, screen_w: int, screen_h: int):
+        # 선택지 rect 캐시 초기화
+        self._choice_rects = []
+
+        # 1) 근접 + 미대화 상태면 힌트
         if near and not self.talk_active:
             hint = self.font.render("SPACE: 대화하기", True, (30, 30, 40))
             box = pygame.Surface((hint.get_width() + 10, hint.get_height() + 6), pygame.SRCALPHA)
             box.fill((255, 255, 255, 180))
-
             sx = int(self.rect.centerx - camera_x) - box.get_width() // 2
-
-            if topdown:
-                # ✅ 탑다운: NPC 바로 아래
-                sy = int(self.rect.bottom - camera_y) + 8
-                # 화면 밖으로 나가면 클램프
-                if sy + box.get_height() > screen_h - 4:
-                    sy = screen_h - box.get_height() - 4
-            else:
-                # ✅ 사이드뷰: 기존처럼 위쪽
-                sy = int(self.rect.top - camera_y) - 70
-
+            sy = self.rect.top - 70
             surf.blit(box, (sx, sy))
-            surf.blit(hint, (sx + 5, sy + 3))
+            surf.blit(hint, (sx + 5, sy + 4))
             return
 
-        # -------------------------------------------------
-        # 2) 대화 중이 아니면 종료
-        # -------------------------------------------------
         if not self.talk_active:
             return
 
-        # -------------------------------------------------
-        # 3) 대화 패널(기존 그대로)
-        # -------------------------------------------------
-        box_h = 150
+        # 2) 하단 패널
+        box_h = 170
         panel = pygame.Surface((screen_w, box_h), pygame.SRCALPHA)
         panel.fill((18, 20, 24, 235))
         surf.blit(panel, (0, screen_h - box_h))
 
-        # 이름 + 방문 뱃지
         title = f"{self.name}  ·  {self.visit_count}번째 만남"
         name_img = self.big.render(title, True, (250, 230, 170))
-        surf.blit(name_img, (16, screen_h - box_h + 12))
+        surf.blit(name_img, (16, screen_h - box_h + 10))
 
-        # 본문
-        text = self.active_lines[min(self._idx, len(self.active_lines) - 1)]
-        x0, y0 = 16, screen_h - box_h + 48
+        # 3) 현재 노드 해석 (✅ choices 항상 정의)
+        node = self._current_node()
+
+        text = "..."
+        choices = []
+
+        if isinstance(node, dict):
+            text = node.get("text", "...")
+            c = node.get("choices", [])
+            choices = c if isinstance(c, list) else []
+        else:
+            text = "" if node is None else str(node)
+
+        # 4) 본문 렌더
+        x0, y0 = 16, screen_h - box_h + 44
         max_w = screen_w - 32
         for i, ln in enumerate(_wrap_text(text, self.font, max_w)):
             line_img = self.font.render(ln, True, (235, 235, 240))
             surf.blit(line_img, (x0, y0 + i * 22))
 
-        # 힌트
-        hint = self.font.render("SPACE: 다음  |  마지막에서 닫힘", True, (200, 200, 210))
-        surf.blit(hint, (screen_w - hint.get_width() - 12, screen_h - hint.get_height() - 10))
-
-        # 선택지 렌더
+        # 5) 선택지 렌더
         if choices:
-            # 버튼 배치(가로로 2~3개씩 자연 분산)
-            btn_y = screen_h - 36
             btn_pad_x = 10
             gap = 8
 
+            # 아래쪽에서 위로 쌓이게 배치
+            btn_y = screen_h - 36
             cur_x = 16
+
             for i, ch in enumerate(choices):
+                if not isinstance(ch, dict):
+                    continue
+
                 label = ch.get("label", f"선택 {i+1}")
                 txt = self.font.render(f"{i+1}. {label}", True, (30, 30, 40))
 
                 bw = txt.get_width() + btn_pad_x * 2
                 bh = txt.get_height() + 8
 
-                # 줄바꿈이 필요하면 다음 줄로
+                # 줄바꿈
                 if cur_x + bw > screen_w - 16:
                     cur_x = 16
                     btn_y -= (bh + 6)
