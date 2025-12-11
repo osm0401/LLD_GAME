@@ -32,6 +32,10 @@ PLAYER_SIZE = (72,90)
 PLAYER_MAX_SPEED = 260
 PLAYER_ACCEL = 1200
 PLAYER_FRICTION = 1600
+
+#플래이어 점프 정보
+PLAYER_GRAVITY = 2000       # 숫자 키우면 더 빨리 떨어짐
+PLAYER_JUMP_SPEED = 500     # 숫자 키우면 더 높이 점프
 # settings.py
 
 PLAYER_SPRITE = "assets/characters/player.png"

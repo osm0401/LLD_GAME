@@ -25,7 +25,7 @@ from player import Player
 from level import Level
 from npc import NPC
 from isac import TopdownView
-
+import key as K
 
 # ------------------------------------------------------------
 # 경로 유틸(Working Directory 이슈 완화)
@@ -212,7 +212,7 @@ class WarpGate:
 
         activated = False
         for e in events:
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_f and near:
+            if e.type == pygame.KEYDOWN and e.key == K.INTERACT and near:
                 activated = True
 
         return near, activated
@@ -322,11 +322,15 @@ def main():
         inventory.set_avatar(player.sprite)
 
     # 사이드뷰 카메라
+    player = Player(spawn_pos)
+
+    # 사이드뷰 카메라
     camera_x = 0.0
 
     running = True
+    last_talk_active = False  # ✅ 직전 프레임에 대화 중이었는지
     while running:
-        dt = clock.tick(getattr(S, "FPS", 60)) / 1000.0
+        dt = clock.tick(S.FPS) / 1000.0
         events = pygame.event.get()
 
         # -------------------------
@@ -336,7 +340,7 @@ def main():
             if e.type == pygame.QUIT:
                 running = False
             elif e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_e:
+                if e.key == K.INVENTORY:
                     inventory.toggle()
 
         # -------------------------
@@ -348,7 +352,7 @@ def main():
         if inventory.is_open:
             filtered = []
             for e in events:
-                if e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE:
+                if e.type == pygame.KEYDOWN and (e.key == pygame.K_w):
                     continue
                 filtered.append(e)
             npc_events = filtered
@@ -357,6 +361,18 @@ def main():
         # NPC 업데이트
         # -------------------------
         near_npc = npc.update(player.rect, npc_events)
+
+        # 이번 프레임 대화 상태
+        talk_active_now = getattr(npc, "talk_active", False)
+
+        # 이번 프레임에 SPACE(대화 진행 키)가 눌렸는지
+        used_continue_key = any(
+            e.type == pygame.KEYDOWN and e.key == K.CONTINUE_TALK
+            for e in events
+        )
+
+        # ✅ "직전에는 대화 중이었고, 지금은 아니고, 이번 프레임에 SPACE를 눌렀다" = 대화 막 끝난 프레임
+        talk_just_closed = (last_talk_active and not talk_active_now and used_continue_key)
 
         # -------------------------
         # 게이트 업데이트
@@ -370,9 +386,26 @@ def main():
         # -------------------------
         keys = pygame.key.get_pressed()
 
-        # 대화/인벤 중 이동 차단
-        if getattr(npc, "talk_active", False) or inventory.is_open:
+        # 점프만 막는 키 래퍼
+        class _JumpFilteredKeys:
+            def __init__(self, base):
+                self._base = base
+
+            def __getitem__(self, k):
+                # 대화 막 끝난 프레임에 SPACE/W 점프만 무시
+                if k == K.JUMP_SPACE or k == K.JUMP_W:
+                    return False
+                return self._base[k]
+
+        # 1) 대화 중 또는 인벤토리 열림 → 전체 이동/점프 입력 차단
+        if talk_active_now or inventory.is_open:
             keys_use = _NoKeys()
+
+        # 2) 이번 프레임에 막 SPACE로 대화가 끝났다면 → 점프만 막고 나머지 입력 허용
+        elif talk_just_closed:
+            keys_use = _JumpFilteredKeys(keys)
+
+        # 3) 그 외에는 그대로 사용
         else:
             keys_use = keys
 
@@ -446,6 +479,7 @@ def main():
             screen.blit(img, (15, 12 + i * 22))
 
         pygame.display.flip()
+        last_talk_active = talk_active_now
 
     pygame.quit()
 

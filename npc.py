@@ -22,9 +22,12 @@
 
 from __future__ import annotations
 import random
+from code import interact
+from key import INTERACT_NAME
 import pygame
 from pygame.math import Vector2 as V2
 import settings as S
+import key as K   # ✅ 추가
 
 
 def _sysfont(name, size):
@@ -211,19 +214,38 @@ class NPC:
         has_choices = isinstance(node, dict) and isinstance(node.get("choices", None), list) and len(node.get("choices")) > 0
 
         for e in events:
-            # 대화 시작/진행
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE and near:
+            if e.type != pygame.KEYDOWN:
+                # 아래 로직은 키 입력만 처리
+                continue
+
+            # 1) 대화 시작: F (INTERACT)
+            if e.key == K.INTERACT and near:
                 if not self.talk_active:
                     self._start_conversation()
                     node = self._current_node()
-                    has_choices = isinstance(node, dict) and isinstance(node.get("choices", None), list) and len(node.get("choices")) > 0
-                else:
-                    # 선택지 노드에서는 SPACE로 넘기지 않게(실수 방지)
-                    if has_choices:
-                        continue
-                    self._idx += 1
-                    if self._idx >= len(self.active_lines):
-                        self.talk_active = False
+                    has_choices = isinstance(node, dict) and isinstance(node.get("choices", None), list) and len(
+                        node.get("choices")) > 0
+                # 이미 대화 중일 때 F는 무시
+                continue
+
+            # 2) 대화 진행: SPACE (CONTINUE_TALK)
+            if e.key == K.CONTINUE_TALK and self.talk_active:
+                # 선택지가 있는 노드에서는 SPACE로 넘기지 않음
+                if has_choices:
+                    continue
+                self._idx += 1
+                if self._idx >= len(self.active_lines):
+                    self.talk_active = False
+                continue
+
+            # 3) 선택지 키보드 1~9
+            if self.talk_active and has_choices and (pygame.K_1 <= e.key <= pygame.K_9):
+                ci = e.key - pygame.K_1
+                choices = node.get("choices", [])
+                if 0 <= ci < len(choices):
+                    self._apply_choice(choices[ci])
+                    node = self._current_node()
+                continue
 
             # 키보드 선택지 1~9
             if e.type == pygame.KEYDOWN and self.talk_active and has_choices:
@@ -273,8 +295,9 @@ class NPC:
         self._choice_rects = []
 
         # 1) 근접 + 미대화 상태면 힌트
+
         if near and not self.talk_active:
-            hint = self.font.render("SPACE: 대화하기", True, (30, 30, 40))
+            hint = self.font.render(f"{INTERACT_NAME}: 대화하기", True, (30, 30, 40))
             box = pygame.Surface((hint.get_width() + 10, hint.get_height() + 6), pygame.SRCALPHA)
             box.fill((255, 255, 255, 180))
             sx = int(self.rect.centerx - camera_x) - box.get_width() // 2
@@ -282,6 +305,7 @@ class NPC:
             surf.blit(box, (sx, sy))
             surf.blit(hint, (sx + 5, sy + 4))
             return
+
 
         if not self.talk_active:
             return
