@@ -1,0 +1,120 @@
+hush()
+
+setcpm(105/4)   // BPM 105 (4/4, 1 cycle = 1마디)
+
+let a = 1/4       // 1마디
+let e = 1/8     // 8분음표 = 0.5박
+let s = 1/16    // 16분음표 = 0.25박
+$: arrange(
+  [e, "a4"],
+  [e, "a4"],
+  [s, "a4"],
+  [s, silence],   // 16분 쉼
+  [e, "c5"],
+  
+  [a ,"c5"],
+  [a, silence],
+  [e, silence],
+  [e, "a4"],
+  [e, "a4"],
+  [e, "a4"],
+  [e, "a4"],
+  [e, "b4"],
+  [a, "b4"],
+  [a, silence],
+  [e, "a4"],
+  [e, "a4"],
+  [s, "a4"],
+  [s, "a4"],
+  [e, "b4"],
+  [e, "b4"],
+  [e, "a4"],
+  [e, "a4"],
+  [e, silence],
+  [e, "a4"],
+  [e, "a4"],
+  [s, "a4"],
+  [s, "a4"],
+  [e, "b4"],
+  [e, "b4"],
+  [e, "a4"],
+  [e, "a4"],
+  [e, silence],
+  [s, "a4"],
+  [s, "a4"],
+  [e, "a4"],
+  [e, "a4"],
+  [e, "c5"],
+  [a, "c5"],
+  [e, silence],
+  [e, silence],
+  [e, "a4"],
+  [e, "a4"],
+  [s, "a4"],
+  [s, "a4"],
+  [e, "b4"],
+  [a, "b4"],
+  [a, silence],
+  [e, "a4"],
+  [e, "a4"],
+  [s, "a4"],
+  [s, "a4"],
+  [e, "b4"],
+  [e, "b4"],
+  [e, "a4"],
+  [e, "a4"],
+  [s, silence],
+  [e, "a4"],
+  [e, "a4"],
+  [s, "a4"],
+  [s, "a4"],
+  [e, "b4"],
+  [e, "c5"],
+  [e, "a4"],
+  [e, "a4"],
+  [e, silence],
+  [e, "c5"],
+  [e, "a4"],
+  [e, "a4"],
+  
+  [s, "c5"],
+  [s, silence],
+  [s, "a4"],
+  [s, silence],
+  [s, "c5"],
+  [s, silence],
+  [s, "a4"],
+  [s, silence],
+  [s, "c5"],
+  [s, silence],
+  [s, "a4"],
+  [s, silence],
+  [e, "g4"],
+  [e, silence],
+  [s, "c5"],
+  [s, silence],
+  [s, "a4"],
+  [s, silence],
+  [s, "c5"],
+  [s, silence],
+  [s, "a4"],
+  [s, silence],
+  [s, "c5"],
+  [s, silence],
+  [s, "a4"],
+  [s, silence],
+  [e, "g4"],
+  [e, silence],
+  [999999, silence]
+)
+.note()
+.sound("piano")
+.scale("A:major")
+.release(0.2)
+$: arrange(
+  [a, "c5"],
+  [999999, silence]
+)
+.note()
+.sound("gm_pad_halo")     // 천천히 올라오게
+.release(1.5)
